@@ -12,6 +12,10 @@ const btnJSON = document.getElementById("btnJSON");
 const kpisEl = document.getElementById("kpis");
 const thead = document.getElementById("thead");
 const tbody = document.getElementById("tbody");
+const canvas = document.getElementById("timeline");
+const btnTimeline = document.getElementById("btnTimeline");
+const scaleInput = document.getElementById("scale");
+const maxRowsInput = document.getElementById("maxRows");
 
 function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
