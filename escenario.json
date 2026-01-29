@@ -1,0 +1,20 @@
+{
+  "day": { "start": "08:00", "end": "20:00", "lambdaPerDay": 24, "seed": 12345 },
+  "mix": {
+    "base": { "Cerebro": 0.25, "Columna": 0.25, "Articulaciones": 0.33, "CuerpoCompleto": 0.02, "Otros": 0.15 },
+    "triangularVolatility": 0.0
+  },
+  "serviceTotal": {
+    "meansMin": { "Cerebro": 16.49, "Columna": 17.38, "Articulaciones": 16.54, "CuerpoCompleto": 33.4, "Otros": 17.25 },
+    "cvTotal": 0.12,
+    "minClamp": 1
+  },
+  "shares": {
+    "mesaIn": 0.06,
+    "cambiadorPre": 0.14,
+    "scan": 0.70,
+    "cambiadorPost": 0.05,
+    "mesaOut": 0.05
+  },
+  "capacity": { "mesa": 1, "cambiador": 1, "resonador": 1 }
+}
