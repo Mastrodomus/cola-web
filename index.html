@@ -101,6 +101,12 @@
         </table>
       </div>
     </div>
+<script type="module">
+  import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js";
+  import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
+  window.THREE = THREE;
+  window.OrbitControls = OrbitControls;
+</script>
 
     <script type="module" src="./src/main.js"></script>
   </body>
