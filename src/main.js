@@ -1,6 +1,6 @@
-import { create3DViewer } from "./view3d.js";
 import { simulateDay } from "./engine.js";
 import { renderTimeline2D } from "./timeline2d.js";
+import { create3DViewer } from "./view3d.js";
 
 let plantilla = null;
 let lastRows = null;
@@ -22,11 +22,21 @@ const kpisEl = document.getElementById("kpis");
 const thead = document.getElementById("thead");
 const tbody = document.getElementById("tbody");
 
-// Timeline
-const canvas = document.getElementById("timeline");
+// Timeline 2D
+const canvas2d = document.getElementById("timeline");
 const btnTimeline = document.getElementById("btnTimeline");
 const scaleInput = document.getElementById("scale");
 const maxRowsInput = document.getElementById("maxRows");
+
+// 3D (si no existen en HTML, no pasa nada: queda apagado)
+const btn3D = document.getElementById("btn3D");
+const btnPlay3D = document.getElementById("btnPlay3D");
+const speed3D = document.getElementById("speed3D");
+const clock3D = document.getElementById("clock3D");
+const canvas3D = document.getElementById("view3d");
+
+let viewer3D = null;
+let clockTimer = null;
 
 /* ----------------------------- Utils ----------------------------------- */
 function clamp01(x) { return Math.max(0, Math.min(1, x)); }
@@ -167,6 +177,7 @@ function renderForm() {
     rSvc2.appendChild(inputNumber(`μ ${k} (min)`, plantilla.serviceTime.meansMin[k], v => plantilla.serviceTime.meansMin[k] = Math.max(0, v), { step:"0.01", min:0, small:true }));
   }
   sSvc.appendChild(rSvc2);
+
   formRoot.appendChild(sSvc);
 
   // Etapas
@@ -329,54 +340,122 @@ function toCSV(rows) {
   return lines.join("\n");
 }
 
-/* ----------------------------- Timeline -------------------------------- */
+/* ----------------------------- Timeline 2D ------------------------------ */
 function renderTimelineNow() {
-  if (!lastRows) return;
-  renderTimeline2D(canvas, lastRows, {
+  if (!lastRows || !canvas2d) return;
+
+  renderTimeline2D(canvas2d, lastRows, {
     startMin: 0,
     endMin: horizonMinutes(),
-    pxPerMin: Number(scaleInput.value || 2),
-    maxRows: Number(maxRowsInput.value || 60)
+    pxPerMin: Number(scaleInput?.value || 2),
+    maxRows: Number(maxRowsInput?.value || 60)
   });
 }
 
+/* ----------------------------- 3D helpers ------------------------------- */
+function enable3DControls(enabled) {
+  if (btn3D) btn3D.disabled = !enabled;
+  if (btnPlay3D) btnPlay3D.disabled = true; // se habilita cuando init 3D
+  if (speed3D) speed3D.disabled = !enabled;
+}
+
+function init3DIfAvailable() {
+  if (!btn3D || !canvas3D) return; // no está el bloque 3D en HTML
+
+  // Habilitamos botón 3D cuando ya hay plantilla cargada
+  enable3DControls(true);
+
+  btn3D.addEventListener("click", () => {
+    if (viewer3D) return;
+
+    // Ruta del plano (según tu repo): public/plano.png
+    viewer3D = create3DViewer(canvas3D, "./public/plano.png");
+
+    if (btnPlay3D) {
+      btnPlay3D.disabled = false;
+      btnPlay3D.textContent = "Play";
+    }
+
+    // Si ya simulaste, cargamos la corrida
+    if (lastRows) viewer3D.load(lastRows);
+
+    // speed init
+    if (speed3D) viewer3D.setSpeed(Number(speed3D.value || 10));
+
+    // reloj
+    if (clock3D && !clockTimer) {
+      clockTimer = setInterval(() => {
+        if (!viewer3D) return;
+        clock3D.textContent = `t=${viewer3D.getTime().toFixed(1)} min`;
+      }, 200);
+    }
+  });
+
+  if (btnPlay3D) {
+    btnPlay3D.addEventListener("click", () => {
+      if (!viewer3D) return;
+      viewer3D.toggle();
+      btnPlay3D.textContent = (btnPlay3D.textContent === "Play") ? "Pause" : "Play";
+    });
+  }
+
+  if (speed3D) {
+    speed3D.addEventListener("input", () => {
+      if (!viewer3D) return;
+      viewer3D.setSpeed(Number(speed3D.value || 10));
+    });
+  }
+}
+
 /* ----------------------------- Events ---------------------------------- */
-btnSim.addEventListener("click", () => {
+btnSim?.addEventListener("click", () => {
   try {
     lastRows = simulateDay(plantilla);
+
     renderKPIs(lastRows);
     renderTable(lastRows);
 
-    btnCSV.disabled = false;
-    btnJSON.disabled = false;
-    btnTimeline.disabled = false;
+    if (btnCSV) btnCSV.disabled = false;
+    if (btnJSON) btnJSON.disabled = false;
+    if (btnTimeline) btnTimeline.disabled = false;
 
-    // auto render
+    // 2D auto
     renderTimelineNow();
+
+    // 3D: si ya está inicializado, recargamos agentes
+    if (viewer3D) viewer3D.load(lastRows);
+
   } catch (err) {
     console.error(err);
     alert(err.message || String(err));
   }
 });
 
-btnCSV.addEventListener("click", () => {
+btnCSV?.addEventListener("click", () => {
   if (!lastRows) return;
   downloadText("escenario.csv", toCSV(lastRows), "text/csv");
 });
 
-btnJSON.addEventListener("click", () => {
+btnJSON?.addEventListener("click", () => {
   if (!lastRows) return;
   const payload = { plantilla, generatedAt: new Date().toISOString(), rows: lastRows };
   downloadText("escenario.json", JSON.stringify(payload, null, 2), "application/json");
 });
 
-btnTimeline.addEventListener("click", renderTimelineNow);
+btnTimeline?.addEventListener("click", renderTimelineNow);
 
 /* ----------------------------- INIT ------------------------------------ */
 (async function init() {
   try {
     plantilla = await loadPlantilla();
     renderForm();
+
+    // timeline button sigue deshabilitado hasta simular
+    if (btnTimeline) btnTimeline.disabled = true;
+
+    // 3D: engancha listeners si están presentes en el HTML
+    init3DIfAvailable();
+
   } catch (err) {
     console.error(err);
     alert(err.message || String(err));
