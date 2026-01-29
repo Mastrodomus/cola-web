@@ -52,6 +52,26 @@
     <div class="card">
       <h3>Timeline 2D (Gantt)</h3>
       <div class="muted">Cada fila = paciente. Barras por etapa. El cuello salta a la vista.</div>
+<div class="card">
+  <h3>Vista 3D (MVP)</h3>
+  <div class="muted">Plano como piso + agentes moviéndose según la simulación.</div>
+
+  <div class="row">
+    <button id="btn3D" class="secondary" disabled>Inicializar 3D</button>
+    <button id="btnPlay3D" class="secondary" disabled>Play</button>
+
+    <label style="min-width:160px">
+      <div class="muted">Velocidad</div>
+      <input id="speed3D" type="number" value="10" step="1" min="1" max="200" />
+    </label>
+
+    <div class="muted" id="clock3D">t=0.0 min</div>
+  </div>
+
+  <div style="height:520px;border:1px solid #ddd;border-radius:10px;overflow:hidden;">
+    <canvas id="view3d"></canvas>
+  </div>
+</div>
 
       <div class="row">
         <label style="min-width:160px">
