@@ -1,1 +1,60 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simulador Resonador</title>
+    <style>
+      body { font-family: system-ui, Arial; margin: 16px; }
+      h1 { margin: 0 0 10px; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+      .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin: 10px 0; }
+      label { font-size: 12px; color: #444; display: block; margin-bottom: 4px; }
+      input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 8px; width: 140px; }
+      button { padding: 8px 12px; border: 1px solid #333; background: #111; color: #fff; border-radius: 10px; cursor: pointer; }
+      button.secondary { background: #fff; color: #111; }
+      table { border-collapse: collapse; width: 100%; font-size: 12px; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: right; }
+      th { background: #f7f7f7; position: sticky; top: 0; z-index: 2; }
+      td.left, th.left { text-align: left; }
+      .kpi { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; }
+      .kpi div { border: 1px solid #eee; border-radius: 10px; padding: 10px; }
+      .muted { color: #666; font-size: 12px; }
+      .scroll { max-height: 420px; overflow: auto; border-radius: 10px; border: 1px solid #ddd; }
+      .small { width: 110px; }
+    </style>
+  </head>
+  <body>
+    <h1>Simulador Resonador (MVP)</h1>
+    <div class="muted">Plantilla editable → Simular → Tabla + KPIs + Export CSV</div>
+
+    <div class="card">
+      <h3>Plantilla</h3>
+      <div id="formRoot"></div>
+
+      <div class="row">
+        <button id="btnSim">Simular</button>
+        <button id="btnCSV" class="secondary" disabled>Export CSV</button>
+        <button id="btnJSON" class="secondary" disabled>Export Escenario (JSON)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>KPIs</h3>
+      <div class="kpi" id="kpis"></div>
+    </div>
+
+    <div class="card">
+      <h3>Tabla (estilo Sheets)</h3>
+      <div class="scroll">
+        <table>
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
 
