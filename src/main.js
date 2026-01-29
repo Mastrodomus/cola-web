@@ -125,3 +125,154 @@ function renderForm() {
   const rCap = rowContainer();
   rCap.appendChild(inputNumber("Mesa", plantilla.capacity.mesa, v => plantilla.capacity.mesa = Math.max(1, Math.floor(v)), { step: "1", min: 1, small: true }));
   rCap.appendChild(inputNumber("Cambiador", plantilla.capacity.cambiador, v => plantilla.capacity.cambiador = Math.max(1, Math.floor(v)), { step: "1", min: 1, small: true }));
+  rCap.appendChild(inputNumber("Resonador", plantilla.capacity.resonador, v => plantilla.capacity.resonador = Math.max(1, Math.floor(v)), { step: "1", min: 1, small: true }));
+  const capNote = document.createElement("div");
+  capNote.className = "muted";
+  capNote.textContent = "En tu caso real: 1 resonador. Mesa/cambiador también en 1 por defecto.";
+  sCap.appendChild(rCap);
+  sCap.appendChild(capNote);
+  formRoot.appendChild(sCap);
+}
+
+function renderKPIs(rows) {
+  // Utilización aproximada del resonador: suma(scan) / (720)
+  const horizon = 720;
+  const totalScan = rows.reduce((a, r) => a + r.scan, 0);
+  const utilScan = totalScan / horizon;
+
+  const lastFinish = rows.length ? Math.max(...rows.map(r => r.salida)) : 0;
+  const overtime = Math.max(0, lastFinish - horizon);
+
+  const avgSystem = rows.length ? rows.reduce((a, r) => a + r.tiempoTotal, 0) / rows.length : 0;
+
+  // Esperas por estación (simplificado desde tiempos start/end)
+  // (Si querés exactitud por cola, lo calculamos vía logs de eventos; esto alcanza para MVP)
+  const avgWaitScan = rows.length ? rows.reduce((a, r) => a + (r.startScan - r.endCamb), 0) / rows.length : 0;
+
+  const items = [
+    ["Pacientes (N)", rows.length.toString()],
+    ["Utilización Resonador", (utilScan * 100).toFixed(1) + "%"],
+    ["Espera prom. pre-scan", avgWaitScan.toFixed(2) + " min"],
+    ["Hora última salida", rows.length ? minutesToHHMM(lastFinish) : "-"],
+    ["Overtime", overtime.toFixed(2) + " min"],
+    ["Tiempo sistema prom.", avgSystem.toFixed(2) + " min"]
+  ];
+
+  kpisEl.innerHTML = "";
+  for (const [k, v] of items) {
+    const d = document.createElement("div");
+    d.innerHTML = `<div class="muted">${k}</div><div style="font-size:18px;font-weight:700">${v}</div>`;
+    kpisEl.appendChild(d);
+  }
+}
+
+function renderTable(rows) {
+  const cols = [
+    { key: "id", label: "Paciente", align: "left" },
+    { key: "tipo", label: "Tipo de estudio", align: "left" },
+    { key: "llegada", label: "Llegada (min)" },
+    { key: "horaLlegada", label: "Horario llegada", align: "left" },
+    { key: "mesaIn", label: "Mesa-in" },
+    { key: "cambiadorPre", label: "Cambiador-pre" },
+    { key: "scan", label: "Scan" },
+    { key: "cambiadorPost", label: "Cambiador-post" },
+    { key: "mesaOut", label: "Mesa-out" },
+    { key: "tiempoTotal", label: "Tiempo total sistema" },
+    { key: "horaSalida", label: "Horario salida", align: "left" }
+  ];
+
+  thead.innerHTML = "";
+  const trh = document.createElement("tr");
+  for (const c of cols) {
+    const th = document.createElement("th");
+    th.textContent = c.label;
+    th.className = c.align === "left" ? "left" : "";
+    trh.appendChild(th);
+  }
+  thead.appendChild(trh);
+
+  tbody.innerHTML = "";
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    const view = {
+      ...r,
+      llegada: r.llegada.toFixed(2),
+      mesaIn: r.mesaIn.toFixed(2),
+      cambiadorPre: r.cambiadorPre.toFixed(2),
+      scan: r.scan.toFixed(2),
+      cambiadorPost: r.cambiadorPost.toFixed(2),
+      mesaOut: r.mesaOut.toFixed(2),
+      tiempoTotal: r.tiempoTotal.toFixed(2),
+      horaLlegada: minutesToHHMM(r.llegada),
+      horaSalida: minutesToHHMM(r.salida)
+    };
+
+    for (const c of cols) {
+      const td = document.createElement("td");
+      td.textContent = view[c.key] ?? "";
+      td.className = c.align === "left" ? "left" : "";
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+function downloadText(filename, text, mime="text/plain") {
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function toCSV(rows) {
+  const headers = [
+    "Paciente","Tipo","LlegadaMin","HoraLlegada",
+    "MesaIn","CambiadorPre","Scan","CambiadorPost","MesaOut",
+    "InicioMesaIn","FinMesaIn","InicioCamb","FinCamb","InicioScan","FinScan","InicioCamb2","FinCamb2","InicioMesaOut","FinMesaOut",
+    "TiempoTotalSistema","HoraSalida"
+  ];
+  const lines = [headers.join(",")];
+
+  for (const r of rows) {
+    const vals = [
+      r.id, r.tipo, r.llegada.toFixed(2), minutesToHHMM(r.llegada),
+      r.mesaIn.toFixed(2), r.cambiadorPre.toFixed(2), r.scan.toFixed(2), r.cambiadorPost.toFixed(2), r.mesaOut.toFixed(2),
+      r.startMesaIn.toFixed(2), r.endMesaIn.toFixed(2),
+      r.startCamb.toFixed(2), r.endCamb.toFixed(2),
+      r.startScan.toFixed(2), r.endScan.toFixed(2),
+      r.startCamb2.toFixed(2), r.endCamb2.toFixed(2),
+      r.startMesaOut.toFixed(2), r.endMesaOut.toFixed(2),
+      r.tiempoTotal.toFixed(2), minutesToHHMM(r.salida)
+    ];
+    lines.push(vals.join(","));
+  }
+  return lines.join("\n");
+}
+
+btnSim.addEventListener("click", () => {
+  lastRows = simulateDay(plantilla);
+  renderKPIs(lastRows);
+  renderTable(lastRows);
+  btnCSV.disabled = false;
+  btnJSON.disabled = false;
+});
+
+btnCSV.addEventListener("click", () => {
+  if (!lastRows) return;
+  downloadText("escenario.csv", toCSV(lastRows), "text/csv");
+});
+
+btnJSON.addEventListener("click", () => {
+  if (!lastRows) return;
+  const payload = {
+    plantilla,
+    generatedAt: new Date().toISOString(),
+    rows: lastRows
+  };
+  downloadText("escenario.json", JSON.stringify(payload, null, 2), "application/json");
+});
+
+// Inicial
+renderForm();
