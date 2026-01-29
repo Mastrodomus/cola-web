@@ -1,3 +1,4 @@
+import { create3DViewer } from "./view3d.js";
 import { simulateDay } from "./engine.js";
 import { renderTimeline2D } from "./timeline2d.js";
 
