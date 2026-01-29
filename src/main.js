@@ -1,3 +1,4 @@
+import { renderTimeline2D } from "./timeline2d.js";
 import plantillaRaw from "../plantilla.json";
 import { simulateDay } from "./engine.js";
 
