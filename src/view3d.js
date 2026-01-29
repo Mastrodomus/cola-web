@@ -2,6 +2,9 @@
 export function create3DViewer(canvas, planoUrl) {
   const THREE = window.THREE;
   const OrbitControls = window.OrbitControls;
+  if (!THREE || !OrbitControls) {
+    throw new Error("Three.js/OrbitControls no están cargados. Revisá el script de unpkg en index.html.");
+  }
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -23,8 +26,9 @@ export function create3DViewer(canvas, planoUrl) {
   scene.add(dir);
 
   // Piso con plano
-  const floorSize = 100; // unidades mundo
+  const floorSize = 100;
   const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize);
+
   const tex = new THREE.TextureLoader().load(planoUrl);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -35,15 +39,13 @@ export function create3DViewer(canvas, planoUrl) {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  // Helpers opcionales
+  // Grid suave
   const grid = new THREE.GridHelper(floorSize, 20);
   grid.material.opacity = 0.15;
   grid.material.transparent = true;
   scene.add(grid);
 
-  // Nodos del flujo (ajustables)
-  // Coordenadas en el plano: X/Z
-  // Arrancamos con posiciones razonables; después las “calibrás” a ojo.
+  // Nodos del flujo (ajustables a ojo)
   const nodes = {
     mesa: new THREE.Vector3(-28, 0, 10),
     cambiador: new THREE.Vector3(5, 0, 5),
@@ -52,24 +54,23 @@ export function create3DViewer(canvas, planoUrl) {
 
   // Marcadores
   const markerMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-  function marker(pos, label) {
+  function marker(pos) {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.2, 16), markerMat);
     m.position.set(pos.x, 0.11, pos.z);
     scene.add(m);
   }
-  marker(nodes.mesa, "mesa");
-  marker(nodes.cambiador, "cambiador");
-  marker(nodes.resonador, "resonador");
+  marker(nodes.mesa);
+  marker(nodes.cambiador);
+  marker(nodes.resonador);
 
   // Agentes
   const agentGeo = new THREE.SphereGeometry(0.7, 18, 18);
-  const agentMat = new THREE.MeshStandardMaterial({ color: 0x2b6cb0 });
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0x2b6cb0 });
   const agents = [];
 
-  // Timeline interno (sim time, en minutos)
   let t = 0;
   let playing = false;
-  let speed = 10; // min simulados por segundo real
+  let speed = 10; // min simulados / seg real
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -82,57 +83,47 @@ export function create3DViewer(canvas, planoUrl) {
   window.addEventListener("resize", resize);
   resize();
 
-  // Construye agentes desde rows del engine
-  // Cada row trae start/end por etapa.
-  function load(rows) {
-    // limpiar anteriores
-    for (const a of agents) scene.remove(a.mesh);
-    agents.length = 0;
-
-    // Para cada paciente: definimos su ruta y “clips” de tiempo
-    for (const r of rows) {
-      const mesh = new THREE.Mesh(agentGeo, agentMat.clone());
-      mesh.position.set(nodes.mesa.x, 0.7, nodes.mesa.z);
-      scene.add(mesh);
-
-      const clips = [
-        { a: nodes.mesa, b: nodes.mesa, t0: r.startValidacion, t1: r.endValidacion }, // estacionario
-        { a: nodes.mesa, b: nodes.cambiador, t0: r.endValidacion, t1: r.startCambiador }, // caminar (si hay gap)
-        { a: nodes.cambiador, b: nodes.cambiador, t0: r.startCambiador, t1: r.endCambiador },
-        { a: nodes.cambiador, b: nodes.resonador, t0: r.endCambiador, t1: r.startScan },
-        { a: nodes.resonador, b: nodes.resonador, t0: r.startScan, t1: r.endScan },
-        { a: nodes.resonador, b: nodes.mesa, t0: r.endScan, t1: r.startMargen }, // salida
-        { a: nodes.mesa, b: nodes.mesa, t0: r.startMargen, t1: r.endMargen }
-      ];
-
-      agents.push({ id: r.id, mesh, clips });
-    }
-
-    // reiniciar reloj
-    t = 0;
-  }
-
-  function setSpeed(v) { speed = Math.max(1, Number(v) || 10); }
-  function play() { playing = true; }
-  function pause() { playing = false; }
-  function toggle() { playing = !playing; }
-
   function lerpVec(out, a, b, alpha) {
     out.x = a.x + (b.x - a.x) * alpha;
     out.y = a.y + (b.y - a.y) * alpha;
     out.z = a.z + (b.z - a.z) * alpha;
   }
 
+  function load(rows) {
+    // limpiar
+    for (const a of agents) scene.remove(a.mesh);
+    agents.length = 0;
+
+    for (const r of rows) {
+      const mesh = new THREE.Mesh(agentGeo, baseMat.clone());
+      mesh.position.set(nodes.mesa.x, 0.7, nodes.mesa.z);
+      scene.add(mesh);
+
+      // Clips: si hay gaps (esperas), esos clips generan movimiento/tiempo.
+      const clips = [
+        { a: nodes.mesa, b: nodes.mesa, t0: r.startValidacion, t1: r.endValidacion },
+        { a: nodes.mesa, b: nodes.cambiador, t0: r.endValidacion, t1: r.startCambiador },
+        { a: nodes.cambiador, b: nodes.cambiador, t0: r.startCambiador, t1: r.endCambiador },
+        { a: nodes.cambiador, b: nodes.resonador, t0: r.endCambiador, t1: r.startScan },
+        { a: nodes.resonador, b: nodes.resonador, t0: r.startScan, t1: r.endScan },
+        { a: nodes.resonador, b: nodes.mesa, t0: r.endScan, t1: r.startMargen },
+        { a: nodes.mesa, b: nodes.mesa, t0: r.startMargen, t1: r.endMargen }
+      ];
+
+      agents.push({ id: r.id, mesh, clips });
+    }
+
+    t = 0;
+  }
+
   function updateAgents(simT) {
     const tmp = new THREE.Vector3();
 
     for (const a of agents) {
-      // buscar clip activo
       let clip = null;
       for (const c of a.clips) {
         if (simT >= c.t0 && simT <= c.t1) { clip = c; break; }
       }
-      // si no está activo aún, queda en mesa
       if (!clip) {
         a.mesh.position.set(nodes.mesa.x, 0.7, nodes.mesa.z);
         continue;
@@ -145,6 +136,13 @@ export function create3DViewer(canvas, planoUrl) {
       a.mesh.position.set(tmp.x, 0.7, tmp.z);
     }
   }
+
+  function setSpeed(v) { speed = Math.max(1, Number(v) || 10); }
+  function play() { playing = true; }
+  function pause() { playing = false; }
+  function toggle() { playing = !playing; }
+  function getTime() { return t; }
+  function setTime(x) { t = Math.max(0, Number(x) || 0); }
 
   let last = performance.now();
   function loop(now) {
@@ -159,13 +157,5 @@ export function create3DViewer(canvas, planoUrl) {
   }
   requestAnimationFrame(loop);
 
-  return {
-    load,
-    play,
-    pause,
-    toggle,
-    setSpeed,
-    getTime: () => t,
-    setTime: (x) => { t = Math.max(0, x); }
-  };
+  return { load, play, pause, toggle, setSpeed, getTime, setTime };
 }
