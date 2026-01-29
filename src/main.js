@@ -1,17 +1,21 @@
-import { renderTimeline2D } from "./timeline2d.js";
 import plantillaRaw from "../plantilla.json";
 import { simulateDay } from "./engine.js";
+import { renderTimeline2D } from "./timeline2d.js";
 
 let plantilla = structuredClone(plantillaRaw);
 let lastRows = null;
 
+// DOM
 const formRoot = document.getElementById("formRoot");
 const btnSim = document.getElementById("btnSim");
 const btnCSV = document.getElementById("btnCSV");
 const btnJSON = document.getElementById("btnJSON");
+
 const kpisEl = document.getElementById("kpis");
 const thead = document.getElementById("thead");
 const tbody = document.getElementById("tbody");
+
+// Timeline
 const canvas = document.getElementById("timeline");
 const btnTimeline = document.getElementById("btnTimeline");
 const scaleInput = document.getElementById("scale");
@@ -23,6 +27,11 @@ function hhmmToMin(hhmm) {
   const [hh, mm] = hhmm.split(":").map(Number);
   return hh * 60 + mm;
 }
+
+function horizonMinutes() {
+  return hhmmToMin(plantilla.day.end) - hhmmToMin(plantilla.day.start);
+}
+
 function minutesToHHMM(minFromStart, startHHMM) {
   const base = hhmmToMin(startHHMM);
   const totalMin = base + minFromStart;
@@ -33,32 +42,42 @@ function minutesToHHMM(minFromStart, startHHMM) {
   return `${hh12}:${mm.toString().padStart(2, "0")} ${ampm}`;
 }
 
+// UI builders
 function inputNumber(labelText, value, onChange, opts = {}) {
   const wrap = document.createElement("div");
   wrap.style.minWidth = "160px";
+
   const label = document.createElement("label");
   label.textContent = labelText;
+
   const input = document.createElement("input");
   input.type = "number";
   input.value = value;
+
   if (opts.step) input.step = opts.step;
   if (opts.min !== undefined) input.min = opts.min;
   if (opts.max !== undefined) input.max = opts.max;
   input.className = opts.small ? "small" : "";
+
   input.addEventListener("input", () => onChange(Number(input.value)));
+
   wrap.appendChild(label);
   wrap.appendChild(input);
   return wrap;
 }
+
 function inputText(labelText, value, onChange) {
   const wrap = document.createElement("div");
   wrap.style.minWidth = "160px";
+
   const label = document.createElement("label");
   label.textContent = labelText;
+
   const input = document.createElement("input");
   input.type = "text";
   input.value = value;
   input.addEventListener("input", () => onChange(input.value));
+
   wrap.appendChild(label);
   wrap.appendChild(input);
   return wrap;
@@ -68,12 +87,15 @@ function section(title) {
   const div = document.createElement("div");
   div.className = "card";
   div.style.margin = "10px 0";
+
   const h = document.createElement("h4");
   h.textContent = title;
   h.style.margin = "0 0 10px";
+
   div.appendChild(h);
   return div;
 }
+
 function rowContainer() {
   const div = document.createElement("div");
   div.className = "row";
@@ -91,25 +113,35 @@ function renderForm() {
   rDay.appendChild(inputNumber("λ resonancias/día", plantilla.day.lambdaPerDay, v => plantilla.day.lambdaPerDay = Math.max(0, v), { step: "1", min: 0 }));
   rDay.appendChild(inputNumber("Seed", plantilla.day.seed, v => plantilla.day.seed = Math.floor(v), { step: "1", min: 0 }));
   sDay.appendChild(rDay);
+
+  const dayNote = document.createElement("div");
+  dayNote.className = "muted";
+  dayNote.textContent = `Ventana: ${plantilla.day.start}–${plantilla.day.end} (${horizonMinutes()} min)`;
+  sDay.appendChild(dayNote);
+
   formRoot.appendChild(sDay);
 
   // Mix
   const sMix = section("Mix (triangular alrededor del mode)");
   const rMix1 = rowContainer();
-  rMix1.appendChild(inputNumber("Volatilidad triangular (0-1)", plantilla.mix.triangularVolatility, v => plantilla.mix.triangularVolatility = clamp01(v), { step: "0.01", min: 0, max: 1 }));
+  rMix1.appendChild(inputNumber("Volatilidad triangular (0-1)", plantilla.mix.triangularVolatility ?? 0, v => plantilla.mix.triangularVolatility = clamp01(v), { step: "0.01", min: 0, max: 1 }));
   sMix.appendChild(rMix1);
 
   const rMix2 = rowContainer();
   for (const k of Object.keys(plantilla.mix.mode)) {
     rMix2.appendChild(inputNumber(`P(mode) ${k}`, plantilla.mix.mode[k], v => plantilla.mix.mode[k] = clamp01(v), { step: "0.01", min: 0, max: 1, small: true }));
   }
+  const mixNote = document.createElement("div");
+  mixNote.className = "muted";
+  mixNote.textContent = "Si las probabilidades no suman 1, el engine normaliza el mix del día.";
   sMix.appendChild(rMix2);
+  sMix.appendChild(mixNote);
   formRoot.appendChild(sMix);
 
-  // Service time total
+  // Tiempo total (Normal truncada)
   const sSvc = section("Tiempo total por estudio (Normal truncada)");
   const rSvc1 = rowContainer();
-  rSvc1.appendChild(inputNumber("CV total (σ = μ·CV)", plantilla.serviceTime.cv, v => plantilla.serviceTime.cv = Math.max(0, v), { step: "0.01", min: 0 }));
+  rSvc1.appendChild(inputNumber("CV total (σ = μ·CV)", plantilla.serviceTime.cv ?? 0, v => plantilla.serviceTime.cv = Math.max(0, v), { step: "0.01", min: 0 }));
   rSvc1.appendChild(inputNumber("Clamp mínimo (min)", plantilla.serviceTime.minClamp ?? 1, v => plantilla.serviceTime.minClamp = Math.max(0, v), { step: "1", min: 0 }));
   sSvc.appendChild(rSvc1);
 
@@ -120,44 +152,50 @@ function renderForm() {
   sSvc.appendChild(rSvc2);
   formRoot.appendChild(sSvc);
 
-  // Stages
+  // Etapas
   const sStages = section("Etapas (shares suman 1)");
+  const rSt0 = rowContainer();
+  rSt0.appendChild(inputNumber("enabled (1/0)", plantilla.stages.enabled ? 1 : 0, v => plantilla.stages.enabled = !!Math.round(v), { step: "1", min: 0, max: 1 }));
+  sStages.appendChild(rSt0);
+
   const rSt1 = rowContainer();
-  rSt1.appendChild(inputNumber("enabled (1/0)", plantilla.stages.enabled ? 1 : 0, v => plantilla.stages.enabled = !!Math.round(v), { step: "1", min: 0, max: 1 }));
+  for (const k of Object.keys(plantilla.stages.shares)) {
+    rSt1.appendChild(inputNumber(`share ${k}`, plantilla.stages.shares[k], v => plantilla.stages.shares[k] = Math.max(0, v), { step: "0.01", min: 0, max: 1, small: true }));
+  }
   sStages.appendChild(rSt1);
 
   const rSt2 = rowContainer();
-  for (const k of Object.keys(plantilla.stages.shares)) {
-    rSt2.appendChild(inputNumber(`share ${k}`, plantilla.stages.shares[k], v => plantilla.stages.shares[k] = Math.max(0, v), { step: "0.01", min: 0, max: 1, small: true }));
+  for (const k of Object.keys(plantilla.stages.stageCv)) {
+    rSt2.appendChild(inputNumber(`cv ${k}`, plantilla.stages.stageCv[k], v => plantilla.stages.stageCv[k] = Math.max(0, v), { step: "0.01", min: 0, small: true }));
   }
   sStages.appendChild(rSt2);
 
-  const rSt3 = rowContainer();
-  for (const k of Object.keys(plantilla.stages.stageCv)) {
-    rSt3.appendChild(inputNumber(`cv ${k}`, plantilla.stages.stageCv[k], v => plantilla.stages.stageCv[k] = Math.max(0, v), { step: "0.01", min: 0, small: true }));
-  }
-  sStages.appendChild(rSt3);
+  const stNote = document.createElement("div");
+  stNote.className = "muted";
+  stNote.textContent = "El engine reparte el total por shares, aplica ruido por stageCv y reescala para mantener el total.";
+  sStages.appendChild(stNote);
 
   formRoot.appendChild(sStages);
 }
 
+// KPIs
 function renderKPIs(rows) {
-  const start = plantilla.day.start;
-  const horizon = hhmmToMin(plantilla.day.end) - hhmmToMin(plantilla.day.start);
-
   const N = rows.length;
+  const horizon = horizonMinutes();
+
   const lastFinish = N ? Math.max(...rows.map(r => r.salida)) : 0;
   const overtime = Math.max(0, lastFinish - horizon);
 
-  // Utilización por estación = suma(service)/horizon (aprox, si 1 servidor)
-  const utilScan = N ? (rows.reduce((a, r) => a + r.scan, 0) / horizon) : 0;
+  // Utilización por estación (1 servidor): suma tiempos / horizon
   const utilMesa = N ? (rows.reduce((a, r) => a + r.validacion + r.margen, 0) / horizon) : 0;
   const utilCamb = N ? (rows.reduce((a, r) => a + r.cambiador + r.salidaCambio, 0) / horizon) : 0;
+  const utilScan = N ? (rows.reduce((a, r) => a + r.scan, 0) / horizon) : 0;
 
-  const avgWaitScan = N ? rows.reduce((a, r) => a + r.waitScan, 0) / N : 0;
   const avgSys = N ? rows.reduce((a, r) => a + r.tiempoTotalSistema, 0) / N : 0;
+  const avgWaitScan = N ? rows.reduce((a, r) => a + r.waitScan, 0) / N : 0;
 
-  const maxQueueScan = estimateMaxConcurrent(rows, "startScan", "endScan", "startCambiador", "endCambiador"); // aproximación usable
+  // percentiles rápidos
+  const p90WaitScan = N ? percentile(rows.map(r => r.waitScan), 0.90) : 0;
 
   const items = [
     ["Pacientes (N)", String(N)],
@@ -165,8 +203,9 @@ function renderKPIs(rows) {
     ["Utilización Mesa", (utilMesa * 100).toFixed(1) + "%"],
     ["Utilización Cambiador", (utilCamb * 100).toFixed(1) + "%"],
     ["Espera prom. pre-scan", avgWaitScan.toFixed(2) + " min"],
+    ["Espera P90 pre-scan", p90WaitScan.toFixed(2) + " min"],
     ["Tiempo sistema prom.", avgSys.toFixed(2) + " min"],
-    ["Hora última salida", N ? minutesToHHMM(lastFinish, start) : "-"],
+    ["Hora última salida", N ? minutesToHHMM(lastFinish, plantilla.day.start) : "-"],
     ["Overtime", overtime.toFixed(2) + " min"]
   ];
 
@@ -178,29 +217,18 @@ function renderKPIs(rows) {
   }
 }
 
-// Estimación simple de “presión” de cola: no es la cola exacta,
-// pero sirve como indicador hasta que loguemos eventos.
-function estimateMaxConcurrent(rows) {
-  // eventos de inicio y fin scan (ocupación)
-  const events = [];
-  for (const r of rows) {
-    events.push({ t: r.startScan, d: +1 });
-    events.push({ t: r.endScan, d: -1 });
-  }
-  events.sort((a, b) => a.t - b.t || b.d - a.d);
-  let cur = 0, max = 0;
-  for (const e of events) {
-    cur += e.d;
-    if (cur > max) max = cur;
-  }
-  return max;
+function percentile(values, p) {
+  const a = values.slice().sort((x, y) => x - y);
+  const idx = Math.floor((a.length - 1) * p);
+  return a[idx] ?? 0;
 }
 
+// Tabla tipo Sheets
 function renderTable(rows) {
-  // columnas “tipo Sheet”
   const cols = [
     { key: "id", label: "Paciente", align: "left" },
     { key: "tipo", label: "Tipo de estudio", align: "left" },
+    { key: "llegadaMin", label: "Llegada paciente" },
     { key: "horaLlegada", label: "Horario llegada", align: "left" },
     { key: "validacion", label: "Validación" },
     { key: "cambiador", label: "Cambiador" },
@@ -211,6 +239,7 @@ function renderTable(rows) {
     { key: "horaSalida", label: "Horario salida", align: "left" }
   ];
 
+  // Header
   thead.innerHTML = "";
   const trh = document.createElement("tr");
   for (const c of cols) {
@@ -221,22 +250,24 @@ function renderTable(rows) {
   }
   thead.appendChild(trh);
 
+  // Body
   tbody.innerHTML = "";
   for (const r of rows) {
     const tr = document.createElement("tr");
-
     const tiempoTotalServicio = r.validacion + r.cambiador + r.scan + r.salidaCambio + r.margen;
 
     const view = {
-      ...r,
+      id: r.id,
+      tipo: r.tipo,
+      llegadaMin: r.llegada.toFixed(2),
       horaLlegada: minutesToHHMM(r.llegada, plantilla.day.start),
-      horaSalida: minutesToHHMM(r.salida, plantilla.day.start),
       validacion: r.validacion.toFixed(2),
       cambiador: r.cambiador.toFixed(2),
       scan: r.scan.toFixed(2),
       salidaCambio: r.salidaCambio.toFixed(2),
       margen: r.margen.toFixed(2),
-      tiempoTotalServicio: tiempoTotalServicio.toFixed(2)
+      tiempoTotalServicio: tiempoTotalServicio.toFixed(2),
+      horaSalida: minutesToHHMM(r.salida, plantilla.day.start)
     };
 
     for (const c of cols) {
@@ -249,7 +280,8 @@ function renderTable(rows) {
   }
 }
 
-function downloadText(filename, text, mime="text/plain") {
+// Export
+function downloadText(filename, text, mime = "text/plain") {
   const blob = new Blob([text], { type: mime });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -260,40 +292,76 @@ function downloadText(filename, text, mime="text/plain") {
 
 function toCSV(rows) {
   const headers = [
-    "Paciente","Tipo","LlegadaMin","HorarioLlegada",
-    "Validacion","Cambiador","Scan","SalidaCambio","Margen",
-    "TiempoTotalServicio","SalidaMin","HorarioSalida",
-    "StartValidacion","EndValidacion","StartCambiador","EndCambiador","StartScan","EndScan","StartSalidaCambio","EndSalidaCambio","StartMargen","EndMargen",
-    "WaitValidacion","WaitCambiador","WaitScan","WaitSalidaCambio","WaitMargen"
+    "Paciente","Tipo",
+    "LlegadaMin","HorarioLlegada",
+    "Validacion","Cambiador","Scan","SalidaCambio","Margen","TiempoTotalServicio",
+    "StartValidacion","EndValidacion",
+    "StartCambiador","EndCambiador",
+    "StartScan","EndScan",
+    "StartSalidaCambio","EndSalidaCambio",
+    "StartMargen","EndMargen",
+    "SalidaMin","HorarioSalida",
+    "WaitValidacion","WaitCambiador","WaitScan","WaitSalidaCambio","WaitMargen",
+    "TiempoTotalSistema"
   ];
   const lines = [headers.join(",")];
 
   for (const r of rows) {
     const tts = r.validacion + r.cambiador + r.scan + r.salidaCambio + r.margen;
+
     const vals = [
       r.id, r.tipo,
       r.llegada.toFixed(2), minutesToHHMM(r.llegada, plantilla.day.start),
-      r.validacion.toFixed(2), r.cambiador.toFixed(2), r.scan.toFixed(2), r.salidaCambio.toFixed(2), r.margen.toFixed(2),
-      tts.toFixed(2),
-      r.salida.toFixed(2), minutesToHHMM(r.salida, plantilla.day.start),
+      r.validacion.toFixed(2), r.cambiador.toFixed(2), r.scan.toFixed(2), r.salidaCambio.toFixed(2), r.margen.toFixed(2), tts.toFixed(2),
+
       r.startValidacion.toFixed(2), r.endValidacion.toFixed(2),
       r.startCambiador.toFixed(2), r.endCambiador.toFixed(2),
       r.startScan.toFixed(2), r.endScan.toFixed(2),
       r.startSalidaCambio.toFixed(2), r.endSalidaCambio.toFixed(2),
       r.startMargen.toFixed(2), r.endMargen.toFixed(2),
-      r.waitValidacion.toFixed(2), r.waitCambiador.toFixed(2), r.waitScan.toFixed(2), r.waitSalidaCambio.toFixed(2), r.waitMargen.toFixed(2)
+
+      r.salida.toFixed(2), minutesToHHMM(r.salida, plantilla.day.start),
+
+      r.waitValidacion.toFixed(2), r.waitCambiador.toFixed(2), r.waitScan.toFixed(2), r.waitSalidaCambio.toFixed(2), r.waitMargen.toFixed(2),
+      r.tiempoTotalSistema.toFixed(2)
     ];
+
     lines.push(vals.join(","));
   }
+
   return lines.join("\n");
 }
 
+// Timeline
+function renderTimelineNow() {
+  if (!lastRows) return;
+
+  const startMin = 0;
+  const endMin = horizonMinutes();
+  const pxPerMin = Number(scaleInput.value || 2);
+  const maxRows = Number(maxRowsInput.value || 60);
+
+  renderTimeline2D(canvas, lastRows, { startMin, endMin, pxPerMin, maxRows });
+}
+
+// Events
 btnSim.addEventListener("click", () => {
-  lastRows = simulateDay(plantilla);
-  renderKPIs(lastRows);
-  renderTable(lastRows);
-  btnCSV.disabled = false;
-  btnJSON.disabled = false;
+  try {
+    lastRows = simulateDay(plantilla);
+
+    renderKPIs(lastRows);
+    renderTable(lastRows);
+
+    btnCSV.disabled = false;
+    btnJSON.disabled = false;
+    btnTimeline.disabled = false;
+
+    // Render automático del timeline después de simular
+    renderTimelineNow();
+  } catch (err) {
+    console.error(err);
+    alert(String(err?.message ?? err));
+  }
 });
 
 btnCSV.addEventListener("click", () => {
@@ -306,6 +374,8 @@ btnJSON.addEventListener("click", () => {
   const payload = { plantilla, generatedAt: new Date().toISOString(), rows: lastRows };
   downloadText("escenario.json", JSON.stringify(payload, null, 2), "application/json");
 });
+
+btnTimeline.addEventListener("click", renderTimelineNow);
 
 // Init
 renderForm();
