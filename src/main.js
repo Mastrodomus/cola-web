@@ -4,7 +4,14 @@ import { renderTimeline2D } from "./timeline2d.js";
 let plantilla = null;
 let lastRows = null;
 
-// DOM
+/* -------------------- CARGA PLANTILLA (GitHub Pages) -------------------- */
+async function loadPlantilla() {
+  const res = await fetch("./plantilla.json", { cache: "no-store" });
+  if (!res.ok) throw new Error(`No se pudo cargar plantilla.json (HTTP ${res.status})`);
+  return await res.json();
+}
+
+/* ----------------------------- DOM refs -------------------------------- */
 const formRoot = document.getElementById("formRoot");
 const btnSim = document.getElementById("btnSim");
 const btnCSV = document.getElementById("btnCSV");
@@ -20,15 +27,17 @@ const btnTimeline = document.getElementById("btnTimeline");
 const scaleInput = document.getElementById("scale");
 const maxRowsInput = document.getElementById("maxRows");
 
-async function loadPlantilla() {
-  const res = await fetch("./plantilla.json", { cache: "no-store" });
-  if (!res.ok) throw new Error(`No pude cargar plantilla.json (HTTP ${res.status})`);
-  return await res.json();
+/* ----------------------------- Utils ----------------------------------- */
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+function hhmmToMin(hhmm) {
+  const [hh, mm] = String(hhmm).split(":").map(Number);
+  return hh * 60 + mm;
 }
 
-function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-function hhmmToMin(hhmm) { const [hh, mm] = hhmm.split(":").map(Number); return hh * 60 + mm; }
-function horizonMinutes() { return hhmmToMin(plantilla.day.end) - hhmmToMin(plantilla.day.start); }
+function horizonMinutes() {
+  return hhmmToMin(plantilla.day.end) - hhmmToMin(plantilla.day.start);
+}
 
 function minutesToHHMM(minFromStart, startHHMM) {
   const base = hhmmToMin(startHHMM);
@@ -40,19 +49,31 @@ function minutesToHHMM(minFromStart, startHHMM) {
   return `${hh12}:${mm.toString().padStart(2, "0")} ${ampm}`;
 }
 
+function percentile(values, p) {
+  const a = values.slice().sort((x, y) => x - y);
+  const idx = Math.floor((a.length - 1) * p);
+  return a[idx] ?? 0;
+}
+
+/* ----------------------------- UI builders ------------------------------ */
 function inputNumber(labelText, value, onChange, opts = {}) {
   const wrap = document.createElement("div");
   wrap.style.minWidth = "160px";
+
   const label = document.createElement("label");
   label.textContent = labelText;
+
   const input = document.createElement("input");
   input.type = "number";
   input.value = value;
+
   if (opts.step) input.step = opts.step;
   if (opts.min !== undefined) input.min = opts.min;
   if (opts.max !== undefined) input.max = opts.max;
   input.className = opts.small ? "small" : "";
+
   input.addEventListener("input", () => onChange(Number(input.value)));
+
   wrap.appendChild(label);
   wrap.appendChild(input);
   return wrap;
@@ -61,12 +82,15 @@ function inputNumber(labelText, value, onChange, opts = {}) {
 function inputText(labelText, value, onChange) {
   const wrap = document.createElement("div");
   wrap.style.minWidth = "160px";
+
   const label = document.createElement("label");
   label.textContent = labelText;
+
   const input = document.createElement("input");
   input.type = "text";
   input.value = value;
   input.addEventListener("input", () => onChange(input.value));
+
   wrap.appendChild(label);
   wrap.appendChild(input);
   return wrap;
@@ -76,17 +100,26 @@ function section(title) {
   const div = document.createElement("div");
   div.className = "card";
   div.style.margin = "10px 0";
+
   const h = document.createElement("h4");
   h.textContent = title;
   h.style.margin = "0 0 10px";
+
   div.appendChild(h);
   return div;
 }
-function rowContainer() { const d = document.createElement("div"); d.className = "row"; return d; }
 
+function rowContainer() {
+  const div = document.createElement("div");
+  div.className = "row";
+  return div;
+}
+
+/* ----------------------------- Render Form ------------------------------ */
 function renderForm() {
   formRoot.innerHTML = "";
 
+  // Día
   const sDay = section("Día");
   const rDay = rowContainer();
   rDay.appendChild(inputText("Inicio (HH:MM)", plantilla.day.start, v => plantilla.day.start = v));
@@ -94,9 +127,16 @@ function renderForm() {
   rDay.appendChild(inputNumber("λ resonancias/día", plantilla.day.lambdaPerDay, v => plantilla.day.lambdaPerDay = Math.max(0, v), { step:"1", min:0 }));
   rDay.appendChild(inputNumber("Seed", plantilla.day.seed, v => plantilla.day.seed = Math.floor(v), { step:"1", min:0 }));
   sDay.appendChild(rDay);
+
+  const note = document.createElement("div");
+  note.className = "muted";
+  note.textContent = `Ventana: ${plantilla.day.start}–${plantilla.day.end} (${horizonMinutes()} min)`;
+  sDay.appendChild(note);
+
   formRoot.appendChild(sDay);
 
-  const sMix = section("Mix");
+  // Mix
+  const sMix = section("Mix (triangular alrededor del mode)");
   const rMix1 = rowContainer();
   rMix1.appendChild(inputNumber("Volatilidad triangular (0-1)", plantilla.mix.triangularVolatility ?? 0, v => plantilla.mix.triangularVolatility = clamp01(v), { step:"0.01", min:0, max:1 }));
   sMix.appendChild(rMix1);
@@ -106,11 +146,18 @@ function renderForm() {
     rMix2.appendChild(inputNumber(`P(mode) ${k}`, plantilla.mix.mode[k], v => plantilla.mix.mode[k] = clamp01(v), { step:"0.01", min:0, max:1, small:true }));
   }
   sMix.appendChild(rMix2);
+
+  const mixNote = document.createElement("div");
+  mixNote.className = "muted";
+  mixNote.textContent = "Si las probabilidades no suman 1, el engine normaliza el mix del día.";
+  sMix.appendChild(mixNote);
+
   formRoot.appendChild(sMix);
 
-  const sSvc = section("Tiempo total por estudio");
+  // Tiempo total
+  const sSvc = section("Tiempo total por estudio (Normal truncada)");
   const rSvc1 = rowContainer();
-  rSvc1.appendChild(inputNumber("CV total", plantilla.serviceTime.cv ?? 0, v => plantilla.serviceTime.cv = Math.max(0, v), { step:"0.01", min:0 }));
+  rSvc1.appendChild(inputNumber("CV total (σ = μ·CV)", plantilla.serviceTime.cv ?? 0, v => plantilla.serviceTime.cv = Math.max(0, v), { step:"0.01", min:0 }));
   rSvc1.appendChild(inputNumber("Clamp mínimo (min)", plantilla.serviceTime.minClamp ?? 1, v => plantilla.serviceTime.minClamp = Math.max(0, v), { step:"1", min:0 }));
   sSvc.appendChild(rSvc1);
 
@@ -121,7 +168,8 @@ function renderForm() {
   sSvc.appendChild(rSvc2);
   formRoot.appendChild(sSvc);
 
-  const sStages = section("Etapas");
+  // Etapas
+  const sStages = section("Etapas (shares suman 1)");
   const rSt0 = rowContainer();
   rSt0.appendChild(inputNumber("enabled (1/0)", plantilla.stages.enabled ? 1 : 0, v => plantilla.stages.enabled = !!Math.round(v), { step:"1", min:0, max:1 }));
   sStages.appendChild(rSt0);
@@ -138,18 +186,19 @@ function renderForm() {
   }
   sStages.appendChild(rSt2);
 
+  const stNote = document.createElement("div");
+  stNote.className = "muted";
+  stNote.textContent = "El engine reparte el total por shares, aplica ruido por stageCv y reescala para mantener el total.";
+  sStages.appendChild(stNote);
+
   formRoot.appendChild(sStages);
 }
 
-function percentile(values, p) {
-  const a = values.slice().sort((x,y)=>x-y);
-  const idx = Math.floor((a.length - 1) * p);
-  return a[idx] ?? 0;
-}
-
+/* ----------------------------- KPIs ------------------------------------ */
 function renderKPIs(rows) {
   const N = rows.length;
   const horizon = horizonMinutes();
+
   const lastFinish = N ? Math.max(...rows.map(r => r.salida)) : 0;
   const overtime = Math.max(0, lastFinish - horizon);
 
@@ -181,6 +230,7 @@ function renderKPIs(rows) {
   }
 }
 
+/* ----------------------------- Tabla ----------------------------------- */
 function renderTable(rows) {
   const cols = [
     { key: "id", label: "Paciente", align: "left" },
@@ -235,7 +285,8 @@ function renderTable(rows) {
   }
 }
 
-function downloadText(filename, text, mime="text/plain") {
+/* ----------------------------- Export ---------------------------------- */
+function downloadText(filename, text, mime = "text/plain") {
   const blob = new Blob([text], { type: mime });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -253,10 +304,12 @@ function toCSV(rows) {
     "WaitValidacion","WaitCambiador","WaitScan","WaitSalidaCambio","WaitMargen",
     "TiempoTotalSistema"
   ];
+
   const lines = [headers.join(",")];
 
   for (const r of rows) {
     const tts = r.validacion + r.cambiador + r.scan + r.salidaCambio + r.margen;
+
     lines.push([
       r.id, r.tipo,
       r.llegada.toFixed(2), minutesToHHMM(r.llegada, plantilla.day.start),
@@ -271,9 +324,11 @@ function toCSV(rows) {
       r.tiempoTotalSistema.toFixed(2)
     ].join(","));
   }
+
   return lines.join("\n");
 }
 
+/* ----------------------------- Timeline -------------------------------- */
 function renderTimelineNow() {
   if (!lastRows) return;
   renderTimeline2D(canvas, lastRows, {
@@ -284,15 +339,18 @@ function renderTimelineNow() {
   });
 }
 
-// Wire buttons
+/* ----------------------------- Events ---------------------------------- */
 btnSim.addEventListener("click", () => {
   try {
     lastRows = simulateDay(plantilla);
     renderKPIs(lastRows);
     renderTable(lastRows);
+
     btnCSV.disabled = false;
     btnJSON.disabled = false;
     btnTimeline.disabled = false;
+
+    // auto render
     renderTimelineNow();
   } catch (err) {
     console.error(err);
@@ -313,7 +371,7 @@ btnJSON.addEventListener("click", () => {
 
 btnTimeline.addEventListener("click", renderTimelineNow);
 
-// INIT
+/* ----------------------------- INIT ------------------------------------ */
 (async function init() {
   try {
     plantilla = await loadPlantilla();
