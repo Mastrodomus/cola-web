@@ -13,42 +13,24 @@
       input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 8px; width: 140px; }
       button { padding: 8px 12px; border: 1px solid #333; background: #111; color: #fff; border-radius: 10px; cursor: pointer; }
       button.secondary { background: #fff; color: #111; }
+
       table { border-collapse: collapse; width: 100%; font-size: 12px; }
       th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: right; }
       th { background: #f7f7f7; position: sticky; top: 0; z-index: 2; }
       td.left, th.left { text-align: left; }
-      <div class="card">
-  <h3>Timeline 2D (Gantt)</h3>
-  <div class="muted">Cada fila = paciente. Barras por etapa. El cuello salta a la vista.</div>
-  <div class="row">
-    <label style="min-width:160px">
-      <div class="muted">Escala (px/min)</div>
-      <input id="scale" type="number" value="2" step="0.5" min="0.5" max="10" />
-    </label>
-
-    <label style="min-width:160px">
-      <div class="muted">Filas a mostrar</div>
-      <input id="maxRows" type="number" value="60" step="10" min="10" max="300" />
-    </label>
-
-    <button id="btnTimeline" class="secondary" disabled>Render timeline</button>
-  </div>
-
-  <div class="scroll" style="padding:10px">
-    <canvas id="timeline" width="1400" height="700" style="border:1px solid #ddd; border-radius:10px;"></canvas>
-  </div>
-</div>
 
       .kpi { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; }
       .kpi div { border: 1px solid #eee; border-radius: 10px; padding: 10px; }
+
       .muted { color: #666; font-size: 12px; }
       .scroll { max-height: 420px; overflow: auto; border-radius: 10px; border: 1px solid #ddd; }
       .small { width: 110px; }
     </style>
   </head>
+
   <body>
     <h1>Simulador Resonador (MVP)</h1>
-    <div class="muted">Plantilla editable → Simular → Tabla + KPIs + Export CSV</div>
+    <div class="muted">Plantilla editable → Simular → Timeline + Tabla + KPIs + Export</div>
 
     <div class="card">
       <h3>Plantilla</h3>
@@ -66,6 +48,30 @@
       <div class="kpi" id="kpis"></div>
     </div>
 
+    <!-- ✅ Timeline 2D (esto va en el body, NO en style) -->
+    <div class="card">
+      <h3>Timeline 2D (Gantt)</h3>
+      <div class="muted">Cada fila = paciente. Barras por etapa. El cuello salta a la vista.</div>
+
+      <div class="row">
+        <label style="min-width:160px">
+          <div class="muted">Escala (px/min)</div>
+          <input id="scale" type="number" value="2" step="0.5" min="0.5" max="10" />
+        </label>
+
+        <label style="min-width:160px">
+          <div class="muted">Filas a mostrar</div>
+          <input id="maxRows" type="number" value="60" step="10" min="10" max="300" />
+        </label>
+
+        <button id="btnTimeline" class="secondary" disabled>Render timeline</button>
+      </div>
+
+      <div class="scroll" style="padding:10px; max-height: 520px;">
+        <canvas id="timeline" width="1400" height="700" style="border:1px solid #ddd; border-radius:10px;"></canvas>
+      </div>
+    </div>
+
     <div class="card">
       <h3>Tabla (estilo Sheets)</h3>
       <div class="scroll">
@@ -79,4 +85,3 @@
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
-
