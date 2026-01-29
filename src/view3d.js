@@ -1,11 +1,8 @@
 // src/view3d.js
-export function create3DViewer(canvas, planoUrl) {
-  const THREE = window.THREE;
-  const OrbitControls = window.OrbitControls;
-  if (!THREE || !OrbitControls) {
-    throw new Error("Three.js/OrbitControls no están cargados. Revisá el script de unpkg en index.html.");
-  }
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
+export function create3DViewer(canvas, planoUrl) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 
@@ -19,13 +16,13 @@ export function create3DViewer(canvas, planoUrl) {
   controls.target.set(0, 0, 0);
   controls.update();
 
-  // Luces
+  // luces
   scene.add(new THREE.AmbientLight(0xffffff, 0.9));
   const dir = new THREE.DirectionalLight(0xffffff, 0.7);
   dir.position.set(30, 80, 40);
   scene.add(dir);
 
-  // Piso con plano
+  // piso con plano
   const floorSize = 100;
   const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize);
 
@@ -39,20 +36,18 @@ export function create3DViewer(canvas, planoUrl) {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  // Grid suave
   const grid = new THREE.GridHelper(floorSize, 20);
   grid.material.opacity = 0.15;
   grid.material.transparent = true;
   scene.add(grid);
 
-  // Nodos del flujo (ajustables a ojo)
+  // nodos ajustables
   const nodes = {
     mesa: new THREE.Vector3(-28, 0, 10),
     cambiador: new THREE.Vector3(5, 0, 5),
     resonador: new THREE.Vector3(18, 0, 25)
   };
 
-  // Marcadores
   const markerMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
   function marker(pos) {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.2, 16), markerMat);
@@ -63,14 +58,13 @@ export function create3DViewer(canvas, planoUrl) {
   marker(nodes.cambiador);
   marker(nodes.resonador);
 
-  // Agentes
   const agentGeo = new THREE.SphereGeometry(0.7, 18, 18);
   const baseMat = new THREE.MeshStandardMaterial({ color: 0x2b6cb0 });
   const agents = [];
 
   let t = 0;
   let playing = false;
-  let speed = 10; // min simulados / seg real
+  let speed = 10;
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -90,7 +84,6 @@ export function create3DViewer(canvas, planoUrl) {
   }
 
   function load(rows) {
-    // limpiar
     for (const a of agents) scene.remove(a.mesh);
     agents.length = 0;
 
@@ -99,7 +92,6 @@ export function create3DViewer(canvas, planoUrl) {
       mesh.position.set(nodes.mesa.x, 0.7, nodes.mesa.z);
       scene.add(mesh);
 
-      // Clips: si hay gaps (esperas), esos clips generan movimiento/tiempo.
       const clips = [
         { a: nodes.mesa, b: nodes.mesa, t0: r.startValidacion, t1: r.endValidacion },
         { a: nodes.mesa, b: nodes.cambiador, t0: r.endValidacion, t1: r.startCambiador },
@@ -110,15 +102,13 @@ export function create3DViewer(canvas, planoUrl) {
         { a: nodes.mesa, b: nodes.mesa, t0: r.startMargen, t1: r.endMargen }
       ];
 
-      agents.push({ id: r.id, mesh, clips });
+      agents.push({ mesh, clips });
     }
-
     t = 0;
   }
 
   function updateAgents(simT) {
     const tmp = new THREE.Vector3();
-
     for (const a of agents) {
       let clip = null;
       for (const c of a.clips) {
@@ -128,10 +118,8 @@ export function create3DViewer(canvas, planoUrl) {
         a.mesh.position.set(nodes.mesa.x, 0.7, nodes.mesa.z);
         continue;
       }
-
       const dt = clip.t1 - clip.t0;
       const alpha = dt <= 0 ? 1 : (simT - clip.t0) / dt;
-
       lerpVec(tmp, clip.a, clip.b, Math.max(0, Math.min(1, alpha)));
       a.mesh.position.set(tmp.x, 0.7, tmp.z);
     }
@@ -148,10 +136,8 @@ export function create3DViewer(canvas, planoUrl) {
   function loop(now) {
     const dtSec = (now - last) / 1000;
     last = now;
-
     if (playing) t += dtSec * speed;
     updateAgents(t);
-
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   }
