@@ -391,4 +391,18 @@ btnJSON.addEventListener("click", () => {
 btnTimeline.addEventListener("click", renderTimelineNow);
 
 // Init
-renderForm();
+async function init() {
+  try {
+    plantilla = await loadPlantilla();
+
+    // --- acá va todo tu código que usa el DOM ---
+    wireDom();      // engancha botones
+    renderForm();   // dibuja inputs
+  } catch (err) {
+    console.error(err);
+    alert(err.message || String(err));
+  }
+}
+
+init();
+
