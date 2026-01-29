@@ -65,5 +65,35 @@ export function simulateDay(config) {
     mesaFree = endMesaIn;
 
     // Cambiador pre
-    const startCamb = Math.max(endMesaIn,
+    const startCamb = Math.max(endMesaIn, cambiadorFree);
+    const endCamb = startCamb + cambiadorPre;
+    cambiadorFree = endCamb;
 
+    // Scan (resonador)
+    const startScan = Math.max(endCamb, resonadorFree);
+    const endScan = startScan + scan;
+    resonadorFree = endScan;
+
+    // Cambiador post
+    const startCamb2 = Math.max(endScan, cambiadorFree);
+    const endCamb2 = startCamb2 + cambiadorPost;
+    cambiadorFree = endCamb2;
+
+    // Mesa salida
+    const startMesaOut = Math.max(endCamb2, mesaFree);
+    const endMesaOut = startMesaOut + mesaOut;
+    mesaFree = endMesaOut;
+
+    rows.push({
+      id: i,
+      tipo,
+      llegada,
+      mesaIn, cambiadorPre, scan, cambiadorPost, mesaOut,
+      inicio: startMesaIn,
+      salida: endMesaOut,
+      tiempoTotal: endMesaOut - llegada
+    });
+  }
+
+  return rows;
+}
