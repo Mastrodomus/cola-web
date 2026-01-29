@@ -1,0 +1,17 @@
+{
+  "day": { "start": "08:00", "end": "20:00", "lambdaPerDay": 24, "seed": 12345 },
+  "mix": {
+    "mode": { "Cerebro": 0.25, "Columna": 0.25, "Articulaciones": 0.33, "CuerpoCompleto": 0.02, "Otros": 0.15 },
+    "triangularVolatility": 0.2
+  },
+  "serviceTime": {
+    "meansMin": { "Cerebro": 16.49, "Columna": 17.38, "Articulaciones": 16.54, "CuerpoCompleto": 33.4, "Otros": 17.25 },
+    "cv": 0.12,
+    "minClamp": 1
+  },
+  "stages": {
+    "enabled": true,
+    "shares": { "validacion": 0.10, "cambiador": 0.15, "scan": 0.65, "salidaCambio": 0.05, "margen": 0.05 },
+    "stageCv": { "validacion": 0.25, "cambiador": 0.25, "scan": 0.10, "salidaCambio": 0.30, "margen": 0.50 }
+  }
+}
