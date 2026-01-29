@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Simulador Resonador</title>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+      }
+    }
+    </script>
+
     <style>
       body { font-family: system-ui, Arial; margin: 16px; }
       h1 { margin: 0 0 10px; }
@@ -13,104 +23,11 @@
       input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 8px; width: 140px; }
       button { padding: 8px 12px; border: 1px solid #333; background: #111; color: #fff; border-radius: 10px; cursor: pointer; }
       button.secondary { background: #fff; color: #111; }
-
       table { border-collapse: collapse; width: 100%; font-size: 12px; }
       th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: right; }
       th { background: #f7f7f7; position: sticky; top: 0; z-index: 2; }
       td.left, th.left { text-align: left; }
-
       .kpi { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; }
       .kpi div { border: 1px solid #eee; border-radius: 10px; padding: 10px; }
-
       .muted { color: #666; font-size: 12px; }
-      .scroll { max-height: 420px; overflow: auto; border-radius: 10px; border: 1px solid #ddd; }
-      .small { width: 110px; }
-    </style>
-  </head>
-
-  <body>
-    <h1>Simulador Resonador (MVP)</h1>
-    <div class="muted">Plantilla editable → Simular → Timeline + Tabla + KPIs + Export</div>
-
-    <div class="card">
-      <h3>Plantilla</h3>
-      <div id="formRoot"></div>
-
-      <div class="row">
-        <button id="btnSim">Simular</button>
-        <button id="btnCSV" class="secondary" disabled>Export CSV</button>
-        <button id="btnJSON" class="secondary" disabled>Export Escenario (JSON)</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>KPIs</h3>
-      <div class="kpi" id="kpis"></div>
-    </div>
-
-<!-- ✅ Timeline 2D -->
-<div class="card">
-  <h3>Timeline 2D (Gantt)</h3>
-  <div class="muted">Cada fila = paciente. Barras por etapa. El cuello salta a la vista.</div>
-
-  <div class="row">
-    <label style="min-width:160px">
-      <div class="muted">Escala (px/min)</div>
-      <input id="scale" type="number" value="2" step="0.5" min="0.5" max="10" />
-    </label>
-
-    <label style="min-width:160px">
-      <div class="muted">Filas a mostrar</div>
-      <input id="maxRows" type="number" value="60" step="10" min="10" max="300" />
-    </label>
-
-    <button id="btnTimeline" class="secondary" disabled>Render timeline</button>
-  </div>
-
-  <div class="scroll" style="padding:10px; max-height: 520px;">
-    <canvas id="timeline" width="1400" height="700" style="border:1px solid #ddd; border-radius:10px;"></canvas>
-  </div>
-</div>
-
-<!-- ✅ Vista 3D -->
-<div class="card">
-  <h3>Vista 3D (MVP)</h3>
-  <div class="muted">Plano como piso + agentes moviéndose según la simulación.</div>
-
-  <div class="row">
-    <button id="btn3D" class="secondary" disabled>Inicializar 3D</button>
-    <button id="btnPlay3D" class="secondary" disabled>Play</button>
-
-    <label style="min-width:160px">
-      <div class="muted">Velocidad</div>
-      <input id="speed3D" type="number" value="10" step="1" min="1" max="200" />
-    </label>
-
-    <div class="muted" id="clock3D">t=0.0 min</div>
-  </div>
-
-  <div style="height:520px;border:1px solid #ddd;border-radius:10px;overflow:hidden;">
-    <canvas id="view3d" style="width:100%;height:100%;display:block;"></canvas>
-  </div>
-</div>
-
-
-    <div class="card">
-      <h3>Tabla (estilo Sheets)</h3>
-      <div class="scroll">
-        <table>
-          <thead id="thead"></thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
-    </div>
-<script type="module">
-  import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js";
-  import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
-  window.THREE = THREE;
-  window.OrbitControls = OrbitControls;
-</script>
-
-    <script type="module" src="./src/main.js"></script>
-  </body>
-</html>
+      .scroll { max-height: 420px; overflow: auto;
