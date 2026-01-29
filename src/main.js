@@ -1,4 +1,17 @@
-import plantillaRaw from "../plantilla.json";
+import { simulateDay } from "./engine.js";
+import { renderTimeline2D } from "./timeline2d.js";
+
+let plantilla = null;
+let lastRows = null;
+
+async function loadPlantilla() {
+  // GitHub Pages: plantilla.json está en la raíz del repo
+  // Usamos ruta relativa al index.html
+  const res = await fetch("./plantilla.json", { cache: "no-store" });
+  if (!res.ok) throw new Error(`No pude cargar plantilla.json (HTTP ${res.status})`);
+  return await res.json();
+}
+
 import { simulateDay } from "./engine.js";
 import { renderTimeline2D } from "./timeline2d.js";
 
