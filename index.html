@@ -2,9 +2,10 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Simulador Resonador</title>
 
-  <!-- IMPORTMAP PARA THREE -->
+  <!-- ✅ Importmap (DEBE ir en head y antes de cualquier module) -->
   <script type="importmap">
   {
     "imports": {
@@ -15,40 +16,121 @@
   </script>
 
   <style>
-    body { font-family: Arial; margin: 16px; }
-    .card { border:1px solid #ccc; padding:12px; border-radius:10px; margin-bottom:12px; }
-    button { padding:8px 12px; border-radius:8px; cursor:pointer; }
-    canvas { border:1px solid #ccc; }
-    .row { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
+    body { font-family: system-ui, Arial; margin: 16px; }
+    h1 { margin: 0 0 6px; }
+    .muted { color: #666; font-size: 12px; }
+
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin: 12px 0; }
+
+    button { padding: 8px 12px; border: 1px solid #333; background: #111; color: #fff; border-radius: 10px; cursor: pointer; }
+    button.secondary { background: #fff; color: #111; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    label { font-size: 12px; color: #444; display: block; margin-bottom: 4px; }
+    input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 8px; width: 140px; }
+
+    .scroll { max-height: 520px; overflow: auto; border-radius: 10px; border: 1px solid #ddd; }
+    canvas { display: block; }
+
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: right; }
+    th { background: #f7f7f7; position: sticky; top: 0; z-index: 2; }
+    td.left, th.left { text-align: left; }
+
+    .kpi { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 10px; }
+    .kpi > div { border: 1px solid #eee; border-radius: 10px; padding: 10px; }
   </style>
 </head>
 
 <body>
-<h1>Simulador Resonador</h1>
+  <h1>Simulador Resonador (MVP)</h1>
+  <div class="muted">Plantilla → Simular → Timeline 2D + Vista 3D + Export</div>
 
-<div class="card">
-  <button id="btnSim">Simular</button>
-  <button id="btnTimeline" disabled>Render Timeline</button>
-  <button id="btn3D" disabled>Inicializar 3D</button>
-  <button id="btnPlay3D" disabled>Play</button>
+  <!-- Plantilla / controles -->
+  <div class="card">
+    <h3 style="margin:0 0 8px">Plantilla</h3>
+    <div id="formRoot"></div>
 
-  Velocidad:
-  <input id="speed3D" type="number" value="10" min="1" max="100">
-  <span id="clock3D">t=0</span>
-</div>
-
-<div class="card">
-  <h3>Timeline 2D</h3>
-  <canvas id="timeline" width="1200" height="400"></canvas>
-</div>
-
-<div class="card">
-  <h3>Vista 3D</h3>
-  <div style="height:500px">
-    <canvas id="view3d" style="width:100%;height:100%"></canvas>
+    <div class="row">
+      <button id="btnSim">Simular</button>
+      <button id="btnCSV" class="secondary" disabled>Export CSV</button>
+      <button id="btnJSON" class="secondary" disabled>Export Escenario (JSON)</button>
+    </div>
   </div>
-</div>
 
-<script type="module" src="./src/main.js"></script>
+  <!-- KPIs -->
+  <div class="card">
+    <h3 style="margin:0 0 8px">KPIs</h3>
+    <div class="kpi" id="kpis"></div>
+  </div>
+
+  <!-- Timeline 2D -->
+  <div class="card">
+    <h3 style="margin:0 0 6px">Timeline 2D (Gantt)</h3>
+    <div class="muted">Cada fila = paciente. Barras por etapa.</div>
+
+    <div class="row">
+      <label style="min-width:160px">
+        <div class="muted">Escala (px/min)</div>
+        <input id="scale" type="number" value="2" step="0.5" min="0.5" max="10" />
+      </label>
+
+      <label style="min-width:160px">
+        <div class="muted">Filas a mostrar</div>
+        <input id="maxRows" type="number" value="60" step="10" min="10" max="400" />
+      </label>
+
+      <button id="btnTimeline" class="secondary" disabled>Render timeline</button>
+    </div>
+
+    <div class="scroll" style="padding:10px">
+      <canvas id="timeline" width="1400" height="700" style="border:1px solid #ddd; border-radius:10px;"></canvas>
+    </div>
+  </div>
+
+  <!-- Vista 3D -->
+  <div class="card">
+    <h3 style="margin:0 0 6px">Vista 3D</h3>
+    <div class="muted">Plano como piso + agentes moviéndose (mesa → cambiador → resonador → mesa). Incluye calibración por clicks.</div>
+
+    <div class="row">
+      <button id="btn3D" class="secondary" disabled>Inicializar 3D</button>
+      <button id="btnPlay3D" class="secondary" disabled>Play</button>
+
+      <label style="min-width:160px">
+        <div class="muted">Velocidad</div>
+        <input id="speed3D" type="number" value="10" step="1" min="1" max="200" />
+      </label>
+
+      <button id="btnCalib" class="secondary" disabled>Calibrar (click)</button>
+      <button id="btnSaveLayout" class="secondary" disabled>Export layout.json</button>
+
+      <div class="muted" id="clock3D">t=0.0</div>
+      <div class="muted" id="pickInfo"></div>
+    </div>
+
+    <div style="height:520px;border:1px solid #ddd;border-radius:10px;overflow:hidden;">
+      <canvas id="view3d" style="width:100%;height:100%;display:block;"></canvas>
+    </div>
+
+    <div class="muted" style="margin-top:8px">
+      Tip: subí <b>plano.png</b> a la raíz y ajustá <b>layout.json</b> con “Calibrar”.
+    </div>
+  </div>
+
+  <!-- Tabla -->
+  <div class="card">
+    <h3 style="margin:0 0 8px">Tabla</h3>
+    <div class="scroll">
+      <table>
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- App -->
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>
