@@ -1,4 +1,4 @@
-// src/view3d.js
+// src/view3d.js  (GitHub Pages friendly: CDN imports)
 import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js";
 import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
 
@@ -77,7 +77,6 @@ function astar(byId, neighbors, startId, goalId) {
   const open = new Set([startId]);
   const came = new Map();
   const g = new Map([[startId, 0]]);
-
   const h = (id) => dist2(byId[id].p, byId[goalId].p);
 
   while (open.size) {
@@ -122,7 +121,7 @@ function astar(byId, neighbors, startId, goalId) {
 
 export function create3DViewer(canvas, layout) {
   // --- renderer / scene / camera ---
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 
   const scene = new THREE.Scene();
@@ -133,7 +132,7 @@ export function create3DViewer(canvas, layout) {
 
   const floorSize = Number(layout.floorSize ?? 220);
 
-  camera.position.set(0, floorSize * 0.9, floorSize * 0.9);
+  camera.position.set(0, floorSize * 0.6, floorSize * 0.6);
   controls.target.set(0, 0, 0);
   controls.update();
 
@@ -158,7 +157,7 @@ export function create3DViewer(canvas, layout) {
       tex.center.set(0.5, 0.5);
       tex.rotation = Number(layout.texture?.rotation ?? 0);
 
-      // Reduce driver warnings (safe defaults)
+      // keep WebGL happy
       tex.flipY = false;
       tex.premultiplyAlpha = false;
       tex.generateMipmaps = false;
@@ -233,7 +232,10 @@ export function create3DViewer(canvas, layout) {
       const wb = waypoints.find((w) => w.id === b);
       if (!wa || !wb) continue;
 
-      const pts = [new THREE.Vector3(wa.p[0], 0.05, wa.p[1]), new THREE.Vector3(wb.p[0], 0.05, wb.p[1])];
+      const pts = [
+        new THREE.Vector3(wa.p[0], 0.05, wa.p[1]),
+        new THREE.Vector3(wb.p[0], 0.05, wb.p[1]),
+      ];
       const geo = new THREE.BufferGeometry().setFromPoints(pts);
       const line = new THREE.Line(geo, mat);
       edgeGroup.add(line);
