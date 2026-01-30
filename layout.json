@@ -1,0 +1,9 @@
+{
+  "planImage": "./plano.png",
+  "floorSize": 100,
+  "nodes": {
+    "mesa": [-20, 0],
+    "cambiador": [0, 0],
+    "resonador": [20, 0]
+  }
+}
