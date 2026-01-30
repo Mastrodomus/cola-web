@@ -1,6 +1,7 @@
 // src/view3d.js
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js";
+import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
+
 
 /*
   View3D + Editor de waypoints (MVP)
