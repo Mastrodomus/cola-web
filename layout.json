@@ -33,3 +33,26 @@
     ["w3","w9"],["w9","w10"],["w10","w11"]
   ]
 }
+{
+  "walk": { "speed": 60 },
+
+  "nodes": {
+    "sala_espera": [-75, 10],
+    "mesa": [-60, 10],
+    "cambiador": [0, 5],
+    "resonador": [55, 35],
+    "salida": [-75, 10]
+  },
+
+  "waiting": {
+    "anchor": [-78, 14],
+    "rows": 2,
+    "cols": 6,
+    "dx": 3.0,
+    "dz": 2.6,
+    "overflow": [-85, 6]
+  },
+
+  "waypoints": [ /* ...los tuyos... */ ],
+  "edges": [ /* ...los tuyos... */ ]
+}
