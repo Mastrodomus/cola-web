@@ -1,23 +1,54 @@
 {
+  "planImage": "./plano.png",
+  "floorSize": 220,
   "walk": { "speed": 60 },
+  "texture": { "rotation": 0 },
 
   "nodes": {
-    "sala_espera": [-75, 10],
-    "mesa": [-60, 10],
-    "cambiador": [0, 5],
-    "resonador": [55, 35],
-    "salida": [-75, 10]
+    "sala_espera": [-78, 12],
+    "mesa": [-62, 12],
+    "cambiador": [0, 10],
+    "resonador": [55, 34],
+    "salida": [-78, 12]
   },
 
   "waiting": {
-    "anchor": [-78, 14],
+    "anchor": [-84, 18],
     "rows": 2,
     "cols": 6,
     "dx": 3.0,
     "dz": 2.6,
-    "overflow": [-85, 6]
+    "overflow": [-92, 8]
   },
 
-  "waypoints": [ /* ...los tuyos... */ ],
-  "edges": [ /* ...los tuyos... */ ]
+  "waypoints": [
+    { "id": "w_wait", "p": [-78, 12] },
+    { "id": "w_mesa", "p": [-62, 12] },
+
+    { "id": "w_pas1", "p": [-50, 12] },
+    { "id": "w_pas2", "p": [-35, 12] },
+    { "id": "w_pas3", "p": [-20, 12] },
+    { "id": "w_pas4", "p": [-5, 12] },
+    { "id": "w_pas5", "p": [10, 12] },
+
+    { "id": "w_cam", "p": [0, 10] },
+
+    { "id": "w_pas6", "p": [20, 20] },
+    { "id": "w_pas7", "p": [35, 28] },
+    { "id": "w_res", "p": [55, 34] }
+  ],
+
+  "edges": [
+    ["w_wait", "w_mesa"],
+    ["w_mesa", "w_pas1"],
+    ["w_pas1", "w_pas2"],
+    ["w_pas2", "w_pas3"],
+    ["w_pas3", "w_pas4"],
+    ["w_pas4", "w_pas5"],
+    ["w_pas5", "w_cam"],
+    ["w_cam", "w_pas5"],
+    ["w_pas5", "w_pas6"],
+    ["w_pas6", "w_pas7"],
+    ["w_pas7", "w_res"]
+  ]
 }
