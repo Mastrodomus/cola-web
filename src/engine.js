@@ -1,289 +1,210 @@
-import { mulberry32 } from "./rng.js";
-import { normal, poisson, exponential, triangular } from "./distributions.js";
+// src/engine.js
+// Simulador de cola Resonador (MVP)
+// - N por día: Poisson(lambdaPerDay)
+// - Mix de estudios: probabilidades (con pequeño jitter opcional)
+// - Tiempos: Normal con CV, clamp mínimo
+// - Etapas: validacion, cambiador, scan, salidaCambio, margen
 
-/**
- * Engine compatible con plantilla:
- * {
- *  day:{start,end,lambdaPerDay,seed},
- *  mix:{mode:{...}, triangularVolatility},
- *  serviceTime:{meansMin:{...}, cv, minClamp},
- *  stages:{enabled, shares:{validacion,cambiador,scan,salidaCambio,margen}, stageCv:{...}}
- * }
- *
- * Modelo:
- * - N ~ Poisson(lambdaPerDay)
- * - Llegadas intra-día: proceso de Poisson en [0, horizon]
- * - Mix diario: triangular alrededor del "mode" y normalizado
- * - Total por tipo: Normal truncada (mu, sigma=mu*cv)
- * - Partición del total en etapas por shares (suman 1)
- * - Recursos:
- *    * Mesa Atención: se usa para VALIDACION (entrada) y MARGEN (salida)
- *    * Cambiador: se usa para CAMBIADOR (pre) y SALIDACAMBIO (post)
- *    * Resonador: se usa para SCAN
- *
- * Devuelve rows con start/end por etapa + waits.
- */
-export function simulateDay(plantilla) {
-  validatePlantilla(plantilla);
-
-  const rng = mulberry32(plantilla.day.seed);
-
-  const horizon = timeWindowMinutes(plantilla.day.start, plantilla.day.end); // 720
-
-  // 1) cantidad de pacientes del día
-  const N = poisson(rng, plantilla.day.lambdaPerDay);
-
-  // 2) mix diario (triangular alrededor del mode)
-  const dayMix = sampleDayMix(rng, plantilla.mix.mode, plantilla.mix.triangularVolatility ?? 0);
-
-  // 3) llegadas
-  const arrivals = generateArrivals(rng, N, horizon);
-
-  // 4) servidores (capacidad fija 1 por ahora; si querés la agregamos al JSON)
-  const mesaServers = createServers(1);
-  const cambiadorServers = createServers(1);
-  const resonadorServers = createServers(1);
-
-  const rows = [];
-
-  for (let i = 1; i <= arrivals.length; i++) {
-    const llegada = arrivals[i - 1];
-
-    const tipo = pickFromCategorical(rng, dayMix);
-
-    // total por tipo
-    const mu = plantilla.serviceTime.meansMin[tipo];
-    const sigma = mu * (plantilla.serviceTime.cv ?? 0);
-    const total = clampMin(normal(rng, mu, sigma), plantilla.serviceTime.minClamp ?? 1);
-
-    // tiempos por etapa (reparto por shares + variación por stageCv)
-    const stageTimes = buildStageTimes(rng, total, plantilla.stages);
-
-    // Secuencia con recursos:
-    // Mesa (validacion) -> Cambiador (cambiador) -> Resonador (scan) -> Cambiador (salidaCambio) -> Mesa (margen)
-    const v1 = scheduleOnServers(mesaServers, llegada, stageTimes.validacion);     // Mesa-in
-    const c1 = scheduleOnServers(cambiadorServers, v1.end, stageTimes.cambiador); // Cambiador-pre
-    const s1 = scheduleOnServers(resonadorServers, c1.end, stageTimes.scan);      // Scan
-    const c2 = scheduleOnServers(cambiadorServers, s1.end, stageTimes.salidaCambio); // Cambiador-post
-    const v2 = scheduleOnServers(mesaServers, c2.end, stageTimes.margen);         // Mesa-out (cierre)
-
-    const salida = v2.end;
-    const tiempoTotalSistema = salida - llegada;
-
-    rows.push({
-      id: i,
-      tipo,
-
-      // tiempos clave
-      llegada,
-      salida,
-      tiempoTotalSistema,
-
-      // duraciones por etapa (min)
-      validacion: stageTimes.validacion,
-      cambiador: stageTimes.cambiador,
-      scan: stageTimes.scan,
-      salidaCambio: stageTimes.salidaCambio,
-      margen: stageTimes.margen,
-
-      // start/end por etapa
-      startValidacion: v1.start,
-      endValidacion: v1.end,
-
-      startCambiador: c1.start,
-      endCambiador: c1.end,
-
-      startScan: s1.start,
-      endScan: s1.end,
-
-      startSalidaCambio: c2.start,
-      endSalidaCambio: c2.end,
-
-      startMargen: v2.start,
-      endMargen: v2.end,
-
-      // esperas (útil para KPIs)
-      waitValidacion: v1.start - llegada,
-      waitCambiador: c1.start - v1.end,
-      waitScan: s1.start - c1.end,
-      waitSalidaCambio: c2.start - s1.end,
-      waitMargen: v2.start - c2.end
-    });
-  }
-
-  return rows;
-}
-
-/* ------------------------ STAGES ------------------------ */
-
-/**
- * Construye tiempos por etapa:
- * - Si stages.enabled = false -> todo cae en scan (o en validacion) según tu preferencia.
- * - Si enabled = true:
- *   * Parte total por shares
- *   * Aplica ruido Normal por etapa con stageCv (multiplicativo)
- *   * Re-normaliza para que la suma se aproxime al total
- */
-function buildStageTimes(rng, total, stages) {
-  // fallback duro
-  const fallback = {
-    validacion: 0,
-    cambiador: 0,
-    scan: total,
-    salidaCambio: 0,
-    margen: 0
+export function makeRng(seed = 12345) {
+  // Mulberry32: simple y reproducible
+  let t = seed >>> 0;
+  return function rng() {
+    t += 0x6D2B79F5;
+    let x = t;
+    x = Math.imul(x ^ (x >>> 15), x | 1);
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
   };
-
-  if (!stages?.enabled) return fallback;
-
-  const shares = stages.shares ?? {};
-  const stageCv = stages.stageCv ?? {};
-
-  // base por share
-  const base = {
-    validacion: total * (shares.validacion ?? 0),
-    cambiador: total * (shares.cambiador ?? 0),
-    scan: total * (shares.scan ?? 0),
-    salidaCambio: total * (shares.salidaCambio ?? 0),
-    margen: total * (shares.margen ?? 0)
-  };
-
-  // ruido por etapa: t' = max(0, Normal(base, base*cvStage))
-  const noisy = {};
-  let sum = 0;
-
-  for (const k of Object.keys(base)) {
-    const m = base[k];
-    const cv = Math.max(0, stageCv[k] ?? 0);
-    const sd = m * cv;
-    const x = (sd > 0) ? normal(rng, m, sd) : m;
-    noisy[k] = Math.max(0, x);
-    sum += noisy[k];
-  }
-
-  // reescalado para que sum ~= total
-  if (sum > 0) {
-    const scale = total / sum;
-    for (const k of Object.keys(noisy)) noisy[k] *= scale;
-  }
-
-  return noisy;
 }
 
-/* ------------------------ ARRIVALS & MIX ------------------------ */
-
-function generateArrivals(rng, N, horizon) {
-  if (N <= 0) return [];
-  const rate = N / horizon; // por minuto
-  let t = 0;
-  const arr = [];
-  for (let i = 0; i < N; i++) {
-    t += exponential(rng, rate);
-    if (t > horizon) break;
-    arr.push(t);
-  }
-  return arr;
+export function parseTimeHHMM(s) {
+  // "08:00" -> 480 (min)
+  const [hh, mm] = String(s).split(":").map(Number);
+  return hh * 60 + mm;
 }
 
-function sampleDayMix(rng, modeProbs, volatility) {
-  const vol = Math.max(0, Math.min(1, volatility));
-  const keys = Object.keys(modeProbs);
+export function fmtClock(minFromStart, dayStartMin) {
+  const m = Math.max(0, Math.floor(dayStartMin + minFromStart));
+  const hh = Math.floor(m / 60) % 24;
+  const mm = m % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
 
-  const raw = {};
+export function poisson(lambda, rng) {
+  // Knuth
+  const L = Math.exp(-lambda);
+  let k = 0;
+  let p = 1;
+  do {
+    k++;
+    p *= rng();
+  } while (p > L);
+  return k - 1;
+}
+
+export function normal(mean, sd, rng) {
+  // Box-Muller
+  let u = 0, v = 0;
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
+  const z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  return mean + sd * z;
+}
+
+export function clamp(x, min) {
+  return x < min ? min : x;
+}
+
+export function jitterMix(baseProb, vol, rng) {
+  // baseProb: {k: p}, vol: 0..1
+  // agrega ruido multiplicativo leve y renormaliza.
+  const keys = Object.keys(baseProb);
+  const tmp = {};
   let sum = 0;
-
   for (const k of keys) {
-    const mode = modeProbs[k];
-    const min = mode * (1 - vol);
-    const max = mode * (1 + vol);
-    const v = (vol === 0) ? mode : triangular(rng, min, mode, max);
-    raw[k] = Math.max(0, v);
-    sum += raw[k];
+    const p = baseProb[k];
+    const mult = 1 + (rng() * 2 - 1) * vol; // [1-vol,1+vol]
+    const v = Math.max(0, p * mult);
+    tmp[k] = v;
+    sum += v;
   }
-
-  const norm = {};
-  if (sum === 0) {
-    const p = 1 / keys.length;
-    for (const k of keys) norm[k] = p;
-    return norm;
-  }
-  for (const k of keys) norm[k] = raw[k] / sum;
-  return norm;
+  if (sum <= 0) return { ...baseProb };
+  for (const k of keys) tmp[k] /= sum;
+  return tmp;
 }
 
-function pickFromCategorical(rng, probs) {
+export function sampleCategorical(prob, rng) {
+  const keys = Object.keys(prob);
   let r = rng();
   let acc = 0;
-  const keys = Object.keys(probs);
   for (const k of keys) {
-    acc += probs[k];
+    acc += prob[k];
     if (r <= acc) return k;
   }
   return keys[keys.length - 1];
 }
 
-/* ------------------------ RESOURCES ------------------------ */
+export function buildSchedule(scenario) {
+  const dayStartMin = parseTimeHHMM(scenario.day.start);
+  const dayEndMin = parseTimeHHMM(scenario.day.end);
+  const horizon = dayEndMin - dayStartMin;
 
-function createServers(capacity) {
-  const c = Math.max(1, Math.floor(capacity ?? 1));
-  return new Array(c).fill(0); // freeAt
-}
+  if (horizon <= 0) throw new Error("Horario inválido: end <= start");
 
-function scheduleOnServers(servers, readyAt, serviceTime) {
-  let bestIdx = 0;
-  let bestFree = servers[0];
+  const rng = makeRng(scenario.day.seed ?? 12345);
 
-  for (let i = 1; i < servers.length; i++) {
-    if (servers[i] < bestFree) {
-      bestFree = servers[i];
-      bestIdx = i;
+  // 1) Cantidad de pacientes del día (Poisson)
+  const n = poisson(scenario.day.lambdaPerDay ?? 24, rng);
+
+  // 2) Tiempos de llegada (para el MVP: uniformes en el horario)
+  // (si querés Poisson process real: inter-arrivals exponenciales; lo dejamos simple y estable)
+  const arrivals = Array.from({ length: n }, () => rng() * horizon).sort((a, b) => a - b);
+
+  // 3) Mix (probabilidades base + volatilidad)
+  const mixProb = jitterMix(
+    scenario.mix?.mode ?? {},
+    scenario.mix?.triangularVolatility ?? 0,
+    rng
+  );
+
+  // 4) Service times por estudio
+  const means = scenario.serviceTime?.meansMin ?? {};
+  const cv = Number(scenario.serviceTime?.cv ?? 0.12);
+  const minClamp = Number(scenario.serviceTime?.minClamp ?? 1);
+
+  // 5) Stages
+  const stagesEnabled = scenario.stages?.enabled !== false;
+  const shares = scenario.stages?.shares ?? {
+    validacion: 0.10, cambiador: 0.15, scan: 0.65, salidaCambio: 0.05, margen: 0.05
+  };
+  const stageCv = scenario.stages?.stageCv ?? {
+    validacion: 0.25, cambiador: 0.25, scan: 0.10, salidaCambio: 0.30, margen: 0.50
+  };
+
+  // 6) Simulación 1 servidor (resonador) con cola FIFO.
+  let serverFreeAt = 0;
+
+  const rows = [];
+
+  for (let i = 0; i < n; i++) {
+    const id = i + 1;
+
+    const tipo = sampleCategorical(mixProb, rng);
+    const meanTotal = Number(means[tipo] ?? 18);
+    const sdTotal = Math.max(0.0001, meanTotal * cv);
+    const totalService = clamp(normal(meanTotal, sdTotal, rng), minClamp);
+
+    // dividir por etapas
+    const validShare = shares.validacion ?? 0.10;
+    const cambShare = shares.cambiador ?? 0.15;
+    const scanShare = shares.scan ?? 0.65;
+    const outShare = shares.salidaCambio ?? 0.05;
+    const marShare = shares.margen ?? 0.05;
+
+    function stageTime(name, base) {
+      const c = Number(stageCv[name] ?? 0.2);
+      const sd = Math.max(0.0001, base * c);
+      return clamp(normal(base, sd, rng), 0.2);
     }
+
+    const validacion = stagesEnabled ? stageTime("validacion", totalService * validShare) : 0;
+    const cambiador = stagesEnabled ? stageTime("cambiador", totalService * cambShare) : 0;
+    const scan = stagesEnabled ? stageTime("scan", totalService * scanShare) : totalService;
+    const salidaCambio = stagesEnabled ? stageTime("salidaCambio", totalService * outShare) : 0;
+    const margen = stagesEnabled ? stageTime("margen", totalService * marShare) : 0;
+
+    const llegada = arrivals[i];
+
+    // FIFO single server: start = max(llegada, serverFreeAt)
+    const startValidacion = Math.max(llegada, serverFreeAt);
+    const endValidacion = startValidacion + validacion;
+
+    const startCambiador = endValidacion;
+    const endCambiador = startCambiador + cambiador;
+
+    const startScan = endCambiador;
+    const endScan = startScan + scan;
+
+    const startSalidaCambio = endScan;
+    const endSalidaCambio = startSalidaCambio + salidaCambio;
+
+    const startMargen = endSalidaCambio;
+    const endMargen = startMargen + margen;
+
+    serverFreeAt = endMargen;
+
+    const turnoAsignado = startValidacion; // “slot” real asignado al iniciar flujo
+
+    rows.push({
+      id,
+      tipo,
+      llegada,
+      turnoAsignado,
+
+      validacion,
+      cambiador,
+      scan,
+      salidaCambio,
+      margen,
+
+      startValidacion,
+      endValidacion,
+      startCambiador,
+      endCambiador,
+      startScan,
+      endScan,
+      startSalidaCambio,
+      endSalidaCambio,
+      startMargen,
+      endMargen,
+
+      tiempoTotalServicio: (validacion + cambiador + scan + salidaCambio + margen),
+      horaLlegada: fmtClock(llegada, dayStartMin),
+      horaInicio: fmtClock(startValidacion, dayStartMin),
+      horaSalida: fmtClock(endMargen, dayStartMin),
+      espera: Math.max(0, startValidacion - llegada),
+    });
   }
 
-  const start = Math.max(readyAt, bestFree);
-  const end = start + serviceTime;
-
-  servers[bestIdx] = end;
-  return { start, end, serverIndex: bestIdx };
-}
-
-/* ------------------------ TIME UTILS ------------------------ */
-
-function timeWindowMinutes(startHHMM, endHHMM) {
-  const s = hhmmToMinutes(startHHMM);
-  const e = hhmmToMinutes(endHHMM);
-  const diff = e - s;
-  if (diff <= 0) throw new Error("Ventana horaria inválida (end <= start).");
-  return diff;
-}
-
-function hhmmToMinutes(hhmm) {
-  // "08:00"
-  const [hh, mm] = hhmm.split(":").map(Number);
-  return hh * 60 + mm;
-}
-
-/* ------------------------ VALIDATION ------------------------ */
-
-function validatePlantilla(p) {
-  if (!p?.day?.start || !p?.day?.end) throw new Error("Falta day.start/day.end");
-  if (typeof p.day.lambdaPerDay !== "number") throw new Error("Falta day.lambdaPerDay");
-  if (typeof p.day.seed !== "number") throw new Error("Falta day.seed");
-
-  if (!p?.mix?.mode) throw new Error("Falta mix.mode");
-  if (!p?.serviceTime?.meansMin) throw new Error("Falta serviceTime.meansMin");
-
-  const st = p.stages;
-  if (st?.enabled) {
-    const sh = st.shares || {};
-    const sum = (sh.validacion ?? 0) + (sh.cambiador ?? 0) + (sh.scan ?? 0) + (sh.salidaCambio ?? 0) + (sh.margen ?? 0);
-    if (Math.abs(sum - 1) > 1e-6) {
-      console.warn(`WARNING: stages.shares suman ${sum}. Recomendado = 1.0`);
-    }
-  }
-}
-
-function clampMin(x, min) {
-  if (!Number.isFinite(x)) return min;
-  return Math.max(min, x);
+  return { rows, dayStartMin, horizon, n };
 }
