@@ -7,6 +7,10 @@ const btnPlay3D = document.getElementById("btnPlay3D");
 const speed3D = document.getElementById("speed3D");
 const clock3D = document.getElementById("clock3D");
 
+const btnCalib = document.getElementById("btnCalib");
+const btnSaveLayout = document.getElementById("btnSaveLayout");
+const pickInfo = document.getElementById("pickInfo");
+
 const canvasTimeline = document.getElementById("timeline");
 const ctx = canvasTimeline.getContext("2d");
 
@@ -14,9 +18,27 @@ const canvas3D = document.getElementById("view3d");
 
 let rows = [];
 let viewer3D = null;
+let layout = null;
+let clockTimer = null;
 
-// Simulación simple
-function simulateDay(n = 20) {
+// ---------------- layout loader ----------------
+async function loadLayout() {
+  const res = await fetch("./layout.json", { cache: "no-store" });
+  if (!res.ok) throw new Error(`No se pudo cargar layout.json (HTTP ${res.status})`);
+  return await res.json();
+}
+
+function downloadText(filename, text, mime = "application/json") {
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ---------------- Simulación simple ----------------
+function simulateDay(n = 25) {
   let t = 0;
   const out = [];
 
@@ -36,7 +58,7 @@ function simulateDay(n = 20) {
     const endMarg = startMarg + durMarg;
 
     out.push({
-      id: i+1,
+      id: i + 1,
       startValidacion: startValid,
       endValidacion: endValid,
       startCambiador: startCamb,
@@ -49,56 +71,101 @@ function simulateDay(n = 20) {
 
     t = endMarg;
   }
-
   return out;
 }
 
-// Timeline 2D
+// ---------------- Timeline 2D ----------------
 function renderTimeline(rows) {
-  ctx.clearRect(0,0,canvasTimeline.width,canvasTimeline.height);
+  ctx.clearRect(0, 0, canvasTimeline.width, canvasTimeline.height);
 
   const scale = 5;
   const rowH = 15;
 
-  rows.forEach((r,i)=>{
+  rows.forEach((r, i) => {
     const y = i * rowH;
-
     drawBlock(r.startValidacion, r.endValidacion, y, "orange");
     drawBlock(r.startCambiador, r.endCambiador, y, "blue");
     drawBlock(r.startScan, r.endScan, y, "green");
     drawBlock(r.startMargen, r.endMargen, y, "red");
   });
 
-  function drawBlock(t0,t1,y,color){
+  function drawBlock(t0, t1, y, color) {
     ctx.fillStyle = color;
-    ctx.fillRect(t0*scale, y, (t1-t0)*scale, rowH-2);
+    ctx.fillRect(t0 * scale, y, (t1 - t0) * scale, rowH - 2);
   }
 }
 
-btnSim.onclick = ()=>{
+// ---------------- UI handlers ----------------
+btnSim.onclick = () => {
   rows = simulateDay(25);
   btnTimeline.disabled = false;
   btn3D.disabled = false;
 };
 
-btnTimeline.onclick = ()=>{
-  renderTimeline(rows);
-};
+btnTimeline.onclick = () => renderTimeline(rows);
 
-btn3D.onclick = ()=>{
-  viewer3D = create3DViewer(canvas3D, "./plano.png");
+btn3D.onclick = async () => {
+  if (!layout) layout = await loadLayout();
+
+  viewer3D = create3DViewer(canvas3D, layout);
   viewer3D.load(rows);
+
   btnPlay3D.disabled = false;
+  btnCalib.disabled = false;
+  btnSaveLayout.disabled = false;
 
-  setInterval(()=>{
-    clock3D.textContent = "t=" + viewer3D.getTime().toFixed(1);
-  },200);
+  viewer3D.setSpeed(Number(speed3D.value || 10));
+
+  if (!clockTimer) {
+    clockTimer = setInterval(() => {
+      if (!viewer3D) return;
+      clock3D.textContent = "t=" + viewer3D.getTime().toFixed(1);
+    }, 200);
+  }
 };
 
-btnPlay3D.onclick = ()=>{
-  viewer3D.toggle();
+btnPlay3D.onclick = () => viewer3D?.toggle();
+speed3D.oninput = () => viewer3D?.setSpeed(speed3D.value);
+
+// ---------------- Calibración por clicks ----------------
+let calibMode = false;
+let step = 0;
+const order = ["mesa", "cambiador", "resonador"];
+
+btnCalib.onclick = () => {
+  if (!viewer3D) return;
+  calibMode = !calibMode;
+  step = 0;
+  btnCalib.textContent = calibMode ? "Calibrando… (mesa)" : "Calibrar (click)";
+  pickInfo.textContent = calibMode ? "Hacé click en el piso: mesa → cambiador → resonador" : "";
+  viewer3D.setPickingEnabled(calibMode);
 };
 
-speed3D.oninput = ()=>{
-  if(viewer3D) viewer3D.setSpeed(speed3D.value);
+btnSaveLayout.onclick = () => {
+  if (!layout) return;
+  downloadText("layout.json", JSON.stringify(layout, null, 2), "application/json");
 };
+
+// Evento cuando el viewer detecta click en piso
+window.addEventListener("layoutPick", (ev) => {
+  if (!calibMode || !layout) return;
+
+  const { x, z } = ev.detail;
+  const key = order[step];
+  layout.nodes[key] = [Number(x.toFixed(2)), Number(z.toFixed(2))];
+
+  pickInfo.textContent = `${key}: [${layout.nodes[key][0]}, ${layout.nodes[key][1]}]`;
+
+  step++;
+  if (step >= order.length) {
+    calibMode = false;
+    viewer3D.setPickingEnabled(false);
+    btnCalib.textContent = "Calibrar (click)";
+    pickInfo.textContent += " ✅ listo. Exportá layout.json.";
+  } else {
+    btnCalib.textContent = `Calibrando… (${order[step]})`;
+  }
+
+  // refresca marcadores
+  viewer3D.setNodes(layout.nodes);
+});
