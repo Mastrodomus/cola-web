@@ -131,15 +131,24 @@ export function create3DViewer(canvas, layout) {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  if (layout.planImage) {
-    new THREE.TextureLoader().load(layout.planImage, tex => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.center.set(0.5, 0.5);
-      tex.rotation = layout.texture?.rotation || 0;
-      floor.material.map = tex;
-      floor.material.needsUpdate = true;
-    });
-  }
+if (layout.planImage) {
+  new THREE.TextureLoader().load(layout.planImage, (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.center.set(0.5, 0.5);
+    tex.rotation = Number(layout.texture?.rotation ?? 0);
+
+    // 🔧 FIX WebGL warning
+    tex.flipY = false;
+    tex.premultiplyAlpha = false;
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+
+    floor.material.map = tex;
+    floor.material.needsUpdate = true;
+  });
+}
+
 
   const grid = new THREE.GridHelper(size, 20);
   grid.material.opacity = 0.2;
