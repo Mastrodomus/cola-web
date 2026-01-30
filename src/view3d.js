@@ -8,7 +8,7 @@ function dist2(a, b) {
 }
 
 function nearestWaypointId(waypoints, p) {
-  let best = waypoints[0]?.id;
+  let best = waypoints[0]?.id ?? null;
   let bestD = Infinity;
   for (const w of waypoints) {
     const d = dist2(w.p, p);
@@ -17,8 +17,8 @@ function nearestWaypointId(waypoints, p) {
   return best;
 }
 
-// A* sobre grafo de waypoints (no pesa “tiempo”, pesa distancia)
 function astar(waypointsById, neighbors, startId, goalId) {
+  if (!startId || !goalId) return null;
   if (startId === goalId) return [startId];
 
   const h = (id) => {
@@ -45,6 +45,7 @@ function astar(waypointsById, neighbors, startId, goalId) {
   while (open.size) {
     const current = getBestOpen();
     if (!current) break;
+
     if (current === goalId) {
       const path = [current];
       let c = current;
@@ -73,7 +74,6 @@ function astar(waypointsById, neighbors, startId, goalId) {
     }
   }
 
-  // sin ruta
   return null;
 }
 
@@ -83,17 +83,14 @@ function vecXZ([x, z]) {
 
 function polylineLength(points) {
   let L = 0;
-  for (let i = 1; i < points.length; i++) {
-    L += points[i].distanceTo(points[i-1]);
-  }
+  for (let i = 1; i < points.length; i++) L += points[i].distanceTo(points[i - 1]);
   return L;
 }
 
 function pointAlongPolyline(points, s) {
-  // s en [0, totalLength]
   let acc = 0;
   for (let i = 1; i < points.length; i++) {
-    const a = points[i-1];
+    const a = points[i - 1];
     const b = points[i];
     const seg = b.distanceTo(a);
     if (acc + seg >= s) {
@@ -132,19 +129,16 @@ export function create3DViewer(canvas, layout) {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
+  // Textura del plano
   if (layout.planImage) {
-    new THREE.TextureLoader().load(
-      layout.planImage,
-      (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.center.set(0.5, 0.5);
-        // Si el plano está rotado, ajustá esto: 0, Math.PI/2, -Math.PI/2, Math.PI
-        tex.rotation = 0;
+    new THREE.TextureLoader().load(layout.planImage, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.center.set(0.5, 0.5);
+      tex.rotation = Number(layout.texture?.rotation ?? 0);
 
-        floor.material = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 });
-        floor.material.needsUpdate = true;
-      }
-    );
+      floor.material = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 });
+      floor.material.needsUpdate = true;
+    });
   }
 
   const grid = new THREE.GridHelper(floorSize, 20);
@@ -152,7 +146,7 @@ export function create3DViewer(canvas, layout) {
   grid.material.transparent = true;
   scene.add(grid);
 
-  // ---- Grafo de navegación ----
+  // ---- Grafo (waypoints) ----
   const waypoints = layout.waypoints ?? [];
   const edges = layout.edges ?? [];
   const waypointsById = Object.fromEntries(waypoints.map(w => [w.id, w]));
@@ -165,14 +159,12 @@ export function create3DViewer(canvas, layout) {
     neighbors.get(b).push(a);
   }
 
-  // Debug waypoints (opcional)
+  // Mostrar waypoints (debug)
   const wpMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-  const wpMeshes = [];
   for (const w of waypoints) {
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 10), wpMat);
     m.position.set(w.p[0], 0.25, w.p[1]);
     scene.add(m);
-    wpMeshes.push(m);
   }
 
   // ---- Nodos funcionales ----
@@ -180,6 +172,7 @@ export function create3DViewer(canvas, layout) {
 
   const markerMat = new THREE.MeshStandardMaterial({ color: 0x2563eb });
   const markers = {};
+
   function setMarker(name, p) {
     if (!markers[name]) {
       const m = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.25, 16), markerMat);
@@ -196,16 +189,112 @@ export function create3DViewer(canvas, layout) {
     for (const k of Object.keys(nodes)) setMarker(k, nodes[k]);
   }
 
+  // ---- Sala de espera (sillas) ----
+  const waiting = layout.waiting ?? null;
+  let chairSlots = [];          // { p: Vector3, busyBy: number|null }
+  let chairByPatient = new Map(); // patientId -> slotIndex
+
+  function buildChairSlots() {
+    chairSlots = [];
+    chairByPatient.clear();
+    if (!waiting) return;
+
+    const { anchor, rows, cols, dx, dz } = waiting;
+    const base = new THREE.Vector3(anchor[0], 0, anchor[1]);
+
+    const chairGeo = new THREE.BoxGeometry(0.9, 0.6, 0.9);
+    const chairMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+    for (let r = 0; r < (rows ?? 2); r++) {
+      for (let c = 0; c < (cols ?? 6); c++) {
+        const p = base.clone().add(new THREE.Vector3(c * (dx ?? 3), 0, -r * (dz ?? 2.6)));
+
+        const mesh = new THREE.Mesh(chairGeo, chairMat);
+        mesh.position.set(p.x, 0.3, p.z);
+        scene.add(mesh);
+
+        chairSlots.push({ p, busyBy: null });
+      }
+    }
+  }
+
+  function acquireChair(patientId) {
+    if (!waiting) return;
+    if (chairByPatient.has(patientId)) return;
+    const idx = chairSlots.findIndex(s => s.busyBy == null);
+    if (idx >= 0) {
+      chairSlots[idx].busyBy = patientId;
+      chairByPatient.set(patientId, idx);
+    }
+  }
+
+  function releaseChair(patientId) {
+    const idx = chairByPatient.get(patientId);
+    if (idx === undefined) return;
+    chairSlots[idx].busyBy = null;
+    chairByPatient.delete(patientId);
+  }
+
+  function waitingPointFor(patientId) {
+    const idx = chairByPatient.get(patientId);
+    if (idx !== undefined) return chairSlots[idx].p.clone();
+
+    const ov = waiting?.overflow ?? nodes.sala_espera;
+    return new THREE.Vector3(ov[0], 0, ov[1]);
+  }
+
+  buildChairSlots();
+
   // ---- Movimiento por rutas ----
-  const walkSpeed = (layout.walk?.speed ?? 60); // unidades del layout/min
-  // Si tu plano está en “px del mundo”, esto es “unidades/min”. Lo calibramos luego.
+  const walkSpeed = Number(layout.walk?.speed ?? 60); // unidades/min
+
+  function routeBetween(nodeAName, nodeBName) {
+    const a = nodes[nodeAName];
+    const b = nodes[nodeBName];
+    if (!a || !b) return null;
+    if (waypoints.length === 0) return null;
+
+    const startWp = nearestWaypointId(waypoints, a);
+    const goalWp = nearestWaypointId(waypoints, b);
+    const pathIds = astar(waypointsById, neighbors, startWp, goalWp);
+    if (!pathIds) return null;
+
+    const pts = [];
+    pts.push(vecXZ(a));
+    for (const id of pathIds) pts.push(vecXZ(waypointsById[id].p));
+    pts.push(vecXZ(b));
+    return pts;
+  }
+
+  function buildTravelClip(fromNode, toNode, t0) {
+    const pts = routeBetween(fromNode, toNode);
+    if (!pts) {
+      // SIN fallback: si no hay ruta, el agente queda bloqueado (evita atravesar paredes)
+      return { kind: "blocked", t0, t1: t0 + 0.0001, at: fromNode, from: fromNode, to: toNode };
+    }
+
+    const L = polylineLength(pts);
+    const travelMin = (walkSpeed <= 0) ? 0 : (L / walkSpeed);
+    return { kind: "move", pts, L, t0, t1: t0 + travelMin, from: fromNode, to: toNode };
+  }
+
+  function buildWaitClip(atNode, t0, t1, patientId = null) {
+    let p;
+    if (atNode === "sala_espera" && patientId != null) {
+      p = waitingPointFor(patientId);
+    } else {
+      const n = nodes[atNode];
+      p = new THREE.Vector3(n[0], 0, n[1]);
+    }
+    return { kind: "wait", p, t0, t1, at: atNode, patientId };
+  }
 
   const agentGeo = new THREE.SphereGeometry(0.8, 16, 16);
   const agentMat = new THREE.MeshStandardMaterial({ color: 0x0ea5e9 });
 
   let agents = [];
   let t = 0;
-  let speed = 10; // min simulados / seg real
+  let speed = 10;     // min simulados / seg real
   let playing = false;
 
   function resize() {
@@ -217,51 +306,6 @@ export function create3DViewer(canvas, layout) {
   window.addEventListener("resize", resize);
   resize();
 
-  function routeBetween(nodeAName, nodeBName) {
-    const a = nodes[nodeAName];
-    const b = nodes[nodeBName];
-    if (!a || !b || waypoints.length === 0) {
-      // fallback: línea recta
-      return [vecXZ(a), vecXZ(b)];
-    }
-
-    const startWp = nearestWaypointId(waypoints, a);
-    const goalWp = nearestWaypointId(waypoints, b);
-    const pathIds = astar(waypointsById, neighbors, startWp, goalWp);
-
-    if (!pathIds) {
-      // fallback
-      return [vecXZ(a), vecXZ(b)];
-    }
-
-    const pts = [];
-    pts.push(vecXZ(a));
-    for (const id of pathIds) {
-      const wp = waypointsById[id];
-      pts.push(vecXZ(wp.p));
-    }
-    pts.push(vecXZ(b));
-    return pts;
-  }
-
-  function buildTravelClip(fromNode, toNode, t0) {
-    const pts = routeBetween(fromNode, toNode);
-    const L = polylineLength(pts);
-    const travelMin = (walkSpeed <= 0) ? 0 : (L / walkSpeed);
-    return { kind: "move", pts, L, t0, t1: t0 + travelMin, from: fromNode, to: toNode };
-  }
-
-  function buildWaitClip(atNode, t0, t1) {
-    const p = vecXZ(nodes[atNode]);
-    return { kind: "wait", p, t0, t1, at: atNode };
-  }
-
-  /**
-   * rows: esperamos que tengan tiempos de etapas (como hoy)
-   * Reglas de flujo pedidas:
-   *   entrada -> sala_espera (si llega temprano) -> mesa -> cambiador -> resonador -> mesa -> salida
-   * Nota: si querés “espera SOLO en sala_espera”, hacemos que cualquier gap ocurra ahí.
-   */
   function load(rows) {
     agents.forEach(a => scene.remove(a.mesh));
     agents = [];
@@ -270,57 +314,43 @@ export function create3DViewer(canvas, layout) {
       const mesh = new THREE.Mesh(agentGeo, agentMat.clone());
       scene.add(mesh);
 
-      // Armamos una línea de tiempo con MOVIMIENTOS + ETAPAS
-      // Usamos tus tiempos: startValidacion/endValidacion/... etc
-      // Interpretación:
-      // - el paciente "llega" al sistema en r.startValidacion (o antes, si tu engine lo trae)
-      // Para tu engine real, conviene tener r.llegada. Acá hacemos MVP:
-      const arrival = r.startValidacion; // reemplazar por r.llegada si existe
-
       const clips = [];
 
-      // Entrada -> sala_espera
-      // Si querés que “esperen” hasta su turno de validación, acá:
-      const c1 = buildTravelClip("entrada", "sala_espera", Math.max(0, arrival - 2)); // 2 min antes “por defecto”
-      clips.push(c1);
+      // ✅ Entrada = sala de espera
+      acquireChair(r.id);
 
-      // Espera hasta startValidacion en sala_espera
-      const wait0 = Math.max(c1.t1, 0);
-      if (r.startValidacion > wait0) clips.push(buildWaitClip("sala_espera", wait0, r.startValidacion));
+      // Espera en silla hasta startValidacion
+      clips.push(buildWaitClip("sala_espera", 0, r.startValidacion, r.id));
 
-      // sala_espera -> mesa (llega justo para validación)
-      const c2 = buildTravelClip("sala_espera", "mesa", r.startValidacion);
-      clips.push(c2);
+      // Se levanta y va a mesa
+      releaseChair(r.id);
+      clips.push(buildTravelClip("sala_espera", "mesa", r.startValidacion));
 
-      // Validación (quieto en mesa)
-      clips.push(buildWaitClip("mesa", Math.max(c2.t1, r.startValidacion), r.endValidacion));
+      // Validación quieto en mesa
+      clips.push(buildWaitClip("mesa", r.startValidacion, r.endValidacion));
 
-      // mesa -> cambiador
-      const c3 = buildTravelClip("mesa", "cambiador", r.endValidacion);
-      clips.push(c3);
+      // Mesa -> cambiador
+      clips.push(buildTravelClip("mesa", "cambiador", r.endValidacion));
 
-      // Cambiador (quieto)
-      clips.push(buildWaitClip("cambiador", Math.max(c3.t1, r.startCambiador), r.endCambiador));
+      // Cambiador
+      clips.push(buildWaitClip("cambiador", r.startCambiador, r.endCambiador));
 
-      // cambiador -> resonador
-      const c4 = buildTravelClip("cambiador", "resonador", r.endCambiador);
-      clips.push(c4);
+      // Cambiador -> resonador
+      clips.push(buildTravelClip("cambiador", "resonador", r.endCambiador));
 
-      // Scan (quieto en resonador)
-      clips.push(buildWaitClip("resonador", Math.max(c4.t1, r.startScan), r.endScan));
+      // Scan
+      clips.push(buildWaitClip("resonador", r.startScan, r.endScan));
 
-      // resonador -> mesa (salida por mesa, como dijiste)
-      const c5 = buildTravelClip("resonador", "mesa", r.endScan);
-      clips.push(c5);
+      // Resonador -> mesa (sale por mesa, como pediste)
+      clips.push(buildTravelClip("resonador", "mesa", r.endScan));
 
-      // margen (quieto en mesa)
-      clips.push(buildWaitClip("mesa", Math.max(c5.t1, r.startMargen), r.endMargen));
+      // Margen en mesa
+      clips.push(buildWaitClip("mesa", r.startMargen, r.endMargen));
 
-      // mesa -> salida
-      const c6 = buildTravelClip("mesa", "salida", r.endMargen);
-      clips.push(c6);
+      // Mesa -> salida (salida = sala_espera)
+      clips.push(buildTravelClip("mesa", "salida", r.endMargen));
 
-      agents.push({ mesh, clips });
+      agents.push({ id: r.id, mesh, clips });
     }
 
     t = 0;
@@ -344,11 +374,14 @@ export function create3DViewer(canvas, layout) {
         const p = pointAlongPolyline(clip.pts, s);
         a.mesh.position.copy(p);
         a.mesh.position.y = 1;
+      } else if (clip.kind === "blocked") {
+        const n = nodes[clip.at] ?? nodes.sala_espera;
+        a.mesh.position.set(n[0], 1, n[1]);
       }
     }
   }
 
-  // Picking para calibración (te queda igual)
+  // Picking (para calibración por clicks)
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
   let pickingEnabled = false;
@@ -358,7 +391,7 @@ export function create3DViewer(canvas, layout) {
 
     const rect = canvas.getBoundingClientRect();
     mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+    mouse.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1;
 
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObject(floor);
