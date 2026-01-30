@@ -94,25 +94,27 @@
     <h3 style="margin:0 0 6px">Vista 3D</h3>
     <div class="muted">Plano como piso + agentes moviéndose (mesa → cambiador → resonador → mesa). Incluye calibración por clicks.</div>
 
-    <div class="row">
-      <button id="btn3D" class="secondary" disabled>Inicializar 3D</button>
-      <button id="btnPlay3D" class="secondary" disabled>Play</button>
+   <div class="row">
+  <button id="btn3D" class="secondary" disabled>Inicializar 3D</button>
+  <button id="btnPlay3D" class="secondary" disabled>Play</button>
 
-      <label style="min-width:160px">
-        <div class="muted">Velocidad</div>
-        <input id="speed3D" type="number" value="10" step="1" min="1" max="200" />
-      </label>
+  <label style="min-width:160px">
+    <div class="muted">Velocidad</div>
+    <input id="speed3D" type="number" value="10" step="1" min="1" max="200" />
+  </label>
 
-      <button id="btnCalib" class="secondary" disabled>Calibrar (click)</button>
-      <button id="btnSaveLayout" class="secondary" disabled>Export layout.json</button>
+  <button id="btnWpMode" class="secondary" disabled>Modo: Waypoints</button>
+  <button id="btnEdgeMode" class="secondary" disabled>Modo: Conectar</button>
+  <button id="btnExportLayout" class="secondary" disabled>Export Layout</button>
 
-      <div class="muted" id="clock3D">t=0.0</div>
-      <div class="muted" id="pickInfo"></div>
-    </div>
+  <div class="muted" id="wpHint">Click para crear / Conectar. Shift+click borra waypoint.</div>
+  <div class="muted" id="clock3D">t=0.0 min</div>
+</div>
 
-    <div style="height:520px;border:1px solid #ddd;border-radius:10px;overflow:hidden;">
-      <canvas id="view3d" style="width:100%;height:100%;display:block;"></canvas>
-    </div>
+<div style="height:520px;border:1px solid #ddd;border-radius:10px;overflow:hidden;">
+  <canvas id="view3d"></canvas>
+</div>
+
 
     <div class="muted" style="margin-top:8px">
       Tip: subí <b>plano.png</b> a la raíz y ajustá <b>layout.json</b> con “Calibrar”.
